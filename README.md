@@ -16,6 +16,8 @@ AI-powered fish intelligence platform.
 - `frontend` - Streamlit SPA
 - `infra` - GCP deployment configuration placeholders
 
+See `docs/noaa_data_sources.md` for NOAA source options and agent ideas.
+
 ## Run Backend
 ```powershell
 cd C:\Users\sarah\Source\Repos\PelagicSeer\backend

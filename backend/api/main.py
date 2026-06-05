@@ -1,8 +1,15 @@
+import httpx
 from fastapi import FastAPI
+from fastapi import HTTPException
 
+from agents.environment_collector import collect_conditions_with_fallback
 from agents.orchestrator import build_fishing_advice
 from api.schemas import AdviceRequest
-from connectors.noaa_erddap import get_mock_conditions
+from connectors.gfw import get_fishing_effort
+from connectors.obis import get_species_occurrences
+from connectors.noaa_coops import get_latest_coops_observation
+from connectors.noaa_ncei import get_ncei_datasets, get_ncei_station_summary
+from connectors.noaa_ndbc import get_latest_ndbc_observation
 
 app = FastAPI(title="PelagicSeer API")
 
@@ -14,7 +21,7 @@ def health() -> dict[str, str]:
 
 @app.post("/advice")
 def advice(request: AdviceRequest) -> dict:
-    conditions = get_mock_conditions(request.latitude, request.longitude)
+    conditions = collect_conditions_with_fallback(request.latitude, request.longitude)
     recommendation = build_fishing_advice(request, conditions)
 
     return {
@@ -26,3 +33,125 @@ def advice(request: AdviceRequest) -> dict:
         "conditions": conditions,
         "recommendation": recommendation,
     }
+
+
+@app.get("/noaa/capabilities")
+def noaa_capabilities() -> dict:
+    return {
+        "sources": [
+            {
+                "id": "coops",
+                "name": "NOAA CO-OPS Tides and Currents",
+                "best_for": [
+                    "water temperature",
+                    "currents",
+                    "tide predictions",
+                    "water levels",
+                    "wind",
+                    "barometric pressure",
+                    "salinity",
+                    "visibility",
+                ],
+            },
+            {
+                "id": "ndbc",
+                "name": "NOAA National Data Buoy Center",
+                "best_for": [
+                    "wave height",
+                    "wave period",
+                    "wind",
+                    "sea surface temperature",
+                    "air temperature",
+                    "pressure",
+                ],
+            },
+            {
+                "id": "erddap",
+                "name": "NOAA CoastWatch ERDDAP",
+                "best_for": [
+                    "gridded satellite sea surface temperature",
+                    "chlorophyll",
+                    "ocean color",
+                    "large-area environmental rasters",
+                ],
+            },
+            {
+                "id": "dismap",
+                "name": "NOAA Fisheries DisMAP",
+                "best_for": [
+                    "fish and invertebrate survey distributions",
+                    "species distribution indicators",
+                    "historical biomass surfaces",
+                ],
+            },
+        ]
+    }
+
+
+@app.get("/noaa/coops/latest")
+def latest_coops_observation(
+    station: str,
+    product: str = "water_temperature",
+    units: str = "english",
+) -> dict:
+    try:
+        return get_latest_coops_observation(station=station, product=product, units=units)
+    except (httpx.HTTPError, ValueError) as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.get("/noaa/ndbc/latest/{station}")
+def latest_ndbc_observation(station: str) -> dict:
+    try:
+        return get_latest_ndbc_observation(station=station)
+    except (httpx.HTTPError, ValueError) as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.get("/gfw/effort")
+def fishing_effort(latitude: float, longitude: float, days: int = 30) -> dict:
+    try:
+        return get_fishing_effort(latitude=latitude, longitude=longitude, days=days)
+    except ValueError as exc:
+        # Missing token or no coverage for the requested box/window.
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.get("/obis/occurrences")
+def obis_occurrences(
+    scientificname: str,
+    latitude: float,
+    longitude: float,
+    buffer_deg: float = 1.0,
+) -> dict:
+    try:
+        return get_species_occurrences(
+            scientificname=scientificname,
+            latitude=latitude,
+            longitude=longitude,
+            buffer_deg=buffer_deg,
+        )
+    except (httpx.HTTPError, ValueError) as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.get("/noaa/ncei/datasets")
+def ncei_datasets(limit: int = 25) -> dict:
+    try:
+        return get_ncei_datasets(limit=limit)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.get("/noaa/ncei/station-summary")
+def ncei_station_summary(latitude: float, longitude: float, days: int = 30) -> dict:
+    try:
+        return get_ncei_station_summary(latitude=latitude, longitude=longitude, days=days)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
