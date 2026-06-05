@@ -1,0 +1,13 @@
+name: Deploy
+
+on:
+  workflow_dispatch:
+
+jobs:
+  placeholder:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Deployment not configured yet
+        run: echo "Cloud Run deployment will be configured after GCP project details are finalized."

@@ -1,6 +1,6 @@
 from fastapi.testclient import TestClient
 
-from app.main import app
+from api.main import app
 
 client = TestClient(app)
 
@@ -26,7 +26,7 @@ def test_advice_returns_mock_conditions_and_recommendation() -> None:
     assert response.status_code == 200
     body = response.json()
     assert body["species"] == "tuna"
-    assert body["conditions"]["source"] == "mock-noaa"
+    assert body["conditions"]["source"] == "mock-noaa-erddap"
     assert body["recommendation"]["score"] == 100
     assert body["recommendation"]["label"] == "excellent"
     assert body["recommendation"]["reasons"]

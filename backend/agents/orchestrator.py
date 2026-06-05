@@ -1,7 +1,8 @@
-from app.models.request import AdviceRequest
+from api.schemas import AdviceRequest
 
 
 def build_fishing_advice(request: AdviceRequest, conditions: dict) -> dict:
+    """Rule-based advisor placeholder for the future Claude/LangChain agent."""
     score = 50
     reasons: list[str] = []
 

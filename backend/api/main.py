@@ -1,8 +1,8 @@
 from fastapi import FastAPI
 
-from app.models.request import AdviceRequest
-from app.services.advisor import build_fishing_advice
-from app.services.noaa_client import get_mock_conditions
+from agents.orchestrator import build_fishing_advice
+from api.schemas import AdviceRequest
+from connectors.noaa_erddap import get_mock_conditions
 
 app = FastAPI(title="PelagicSeer API")
 

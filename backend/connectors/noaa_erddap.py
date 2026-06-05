@@ -1,7 +1,7 @@
 def get_mock_conditions(latitude: float, longitude: float) -> dict:
-    """Return NOAA-shaped mock marine conditions for local development."""
+    """Return NOAA ERDDAP-shaped mock marine conditions for local development."""
     return {
-        "source": "mock-noaa",
+        "source": "mock-noaa-erddap",
         "latitude": latitude,
         "longitude": longitude,
         "sea_surface_temp_f": 72.4,
