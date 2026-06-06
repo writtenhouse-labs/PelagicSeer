@@ -21,11 +21,26 @@ _FULL_CONDITIONS = {
     "current_speed_kts": 0.8,
 }
 
+# Signals with both sources unavailable: contributes no scored factors, so the
+# environmental score/confidence are unchanged. Lets /advice tests stay offline.
+_NO_SIGNALS = {
+    "species_input": "tuna",
+    "scientific_name": "Thunnus",
+    "name_resolved": True,
+    "species_presence": {"available": False},
+    "fishing_activity": {"available": False},
+    "sources": [],
+}
+
 
 def test_advice_returns_live_conditions_and_recommendation(monkeypatch) -> None:
     monkeypatch.setattr(
         "api.main.collect_conditions_with_fallback",
         lambda latitude, longitude: dict(_FULL_CONDITIONS),
+    )
+    monkeypatch.setattr(
+        "api.main.collect_signals",
+        lambda species, latitude, longitude: dict(_NO_SIGNALS),
     )
 
     response = client.post(
@@ -53,6 +68,10 @@ def test_advice_degrades_when_data_is_missing(monkeypatch) -> None:
     monkeypatch.setattr(
         "api.main.collect_conditions_with_fallback",
         lambda latitude, longitude: dict(partial),
+    )
+    monkeypatch.setattr(
+        "api.main.collect_signals",
+        lambda species, latitude, longitude: dict(_NO_SIGNALS),
     )
 
     response = client.post(
@@ -224,3 +243,54 @@ def test_obis_occurrences_endpoint(monkeypatch) -> None:
     body = response.json()
     assert body["source"] == "obis"
     assert body["total"] == 1234
+
+
+def test_advisor_scores_signals() -> None:
+    from agents.orchestrator import build_fishing_advice
+    from api.schemas import AdviceRequest
+
+    request = AdviceRequest(
+        latitude=32.7, longitude=-117.1, species="tuna", target_depth_ft=250
+    )
+    signals = {
+        "scientific_name": "Thunnus albacares",
+        "name_resolved": True,
+        "species_presence": {
+            "available": True,
+            "total": 5,
+            "depth_range_m": {"min": 0.0, "max": 300.0},
+        },
+        "fishing_activity": {"available": True, "total_hours": 200.0, "in_season": True},
+    }
+
+    # No environmental data, so the base score of 50 isolates the signal factors:
+    # species present (+10), depth match (+5), high effort (+10), in season (+5).
+    result = build_fishing_advice(request, conditions={}, signals=signals)
+
+    assert result["score"] == 80
+    assert result["label"] == "excellent"
+    assert set(result["signals_considered"]["used"]) == {
+        "species_presence",
+        "fishing_activity",
+    }
+
+
+def test_signal_factors_omitted_without_signals() -> None:
+    from agents.orchestrator import build_fishing_advice
+    from api.schemas import AdviceRequest
+
+    request = AdviceRequest(latitude=32.7, longitude=-117.1, species="tuna")
+    result = build_fishing_advice(request, conditions=dict(_FULL_CONDITIONS))
+
+    # Backward compatible: no signals passed -> no signal section, env score only.
+    assert "signals_considered" not in result
+    assert result["score"] == 100
+
+
+def test_resolve_scientific_name() -> None:
+    from agents.signal_collector import resolve_scientific_name
+
+    assert resolve_scientific_name("Yellowfin Tuna") == ("Thunnus albacares", True)
+    assert resolve_scientific_name("tuna") == ("Thunnus", True)
+    # Unmapped input falls back to the raw string, flagged unresolved.
+    assert resolve_scientific_name("Gadus ogac") == ("Gadus ogac", False)
