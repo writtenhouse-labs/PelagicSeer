@@ -4,6 +4,7 @@ from fastapi import HTTPException
 
 from agents.environment_collector import collect_conditions_with_fallback
 from agents.orchestrator import build_fishing_advice
+from agents.signal_collector import collect_signals
 from api.schemas import AdviceRequest
 from connectors.gfw import get_fishing_effort
 from connectors.obis import get_species_occurrences
@@ -22,7 +23,8 @@ def health() -> dict[str, str]:
 @app.post("/advice")
 def advice(request: AdviceRequest) -> dict:
     conditions = collect_conditions_with_fallback(request.latitude, request.longitude)
-    recommendation = build_fishing_advice(request, conditions)
+    signals = collect_signals(request.species, request.latitude, request.longitude)
+    recommendation = build_fishing_advice(request, conditions, signals)
 
     return {
         "location": {
@@ -31,6 +33,7 @@ def advice(request: AdviceRequest) -> dict:
         },
         "species": request.species,
         "conditions": conditions,
+        "signals": signals,
         "recommendation": recommendation,
     }
 

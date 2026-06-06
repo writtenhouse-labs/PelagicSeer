@@ -10,13 +10,97 @@ SCORABLE_FIELDS = (
     "barometric_pressure_mb",
 )
 
+# Apparent fishing hours (over the GFW year window) at or above which the area
+# reads as notably active.
+_EFFORT_NOTABLE_HOURS = 50.0
+_FT_TO_M = 0.3048
 
-def build_fishing_advice(request: AdviceRequest, conditions: dict) -> dict:
+
+def _score_signals(
+    request: AdviceRequest,
+    signals: dict,
+    score: int,
+    reasons: list[str],
+) -> tuple[int, dict]:
+    """Add species-presence and fishing-activity factors to the score.
+
+    Each factor only moves the score when its source provided data; otherwise
+    it is reported as unavailable. Returns the new score and a summary of which
+    signals were used.
+    """
+    used: list[str] = []
+    missing: list[str] = []
+    species_label = signals.get("scientific_name") or request.species
+
+    presence = signals.get("species_presence", {})
+    if not presence.get("available"):
+        missing.append("species_presence")
+        reasons.append("Species occurrence data was unavailable (OBIS).")
+    elif presence.get("total", 0) > 0:
+        used.append("species_presence")
+        score += 10
+        reasons.append(
+            f"{species_label} has {presence['total']} recorded occurrence(s) near here (OBIS)."
+        )
+        depth = presence.get("depth_range_m")
+        if request.target_depth_ft and depth and depth.get("min") is not None:
+            target_m = request.target_depth_ft * _FT_TO_M
+            if depth["min"] <= target_m <= depth["max"]:
+                score += 5
+                reasons.append(
+                    "Target depth falls within the observed depth range for this species."
+                )
+    else:
+        used.append("species_presence")
+        score -= 5
+        reasons.append(
+            f"No OBIS records of {species_label} near here; presence is uncertain."
+        )
+
+    activity = signals.get("fishing_activity", {})
+    if not activity.get("available"):
+        missing.append("fishing_activity")
+        reasons.append("Fishing-effort data was unavailable (GFW).")
+    else:
+        hours = activity.get("total_hours", 0.0)
+        if hours >= _EFFORT_NOTABLE_HOURS:
+            used.append("fishing_activity")
+            score += 10
+            reasons.append(
+                f"High recent commercial fishing effort nearby ({hours:.0f} hrs) suggests active grounds."
+            )
+        elif hours > 0:
+            used.append("fishing_activity")
+            score += 3
+            reasons.append(f"Some recent commercial fishing effort nearby ({hours:.0f} hrs).")
+        else:
+            used.append("fishing_activity")
+            reasons.append("No recent commercial fishing effort recorded nearby (GFW).")
+        if activity.get("in_season"):
+            score += 5
+            reasons.append("This month is historically active for fishing at this location.")
+
+    summary = {
+        "used": used,
+        "missing": missing,
+        "species_name_resolved": signals.get("name_resolved"),
+    }
+    return score, summary
+
+
+def build_fishing_advice(
+    request: AdviceRequest,
+    conditions: dict,
+    signals: dict | None = None,
+) -> dict:
     """Rule-based advisor placeholder for the future Claude/LangChain agent.
 
     Tolerates missing condition fields: any factor without data is skipped
     (neither helping nor hurting the score) and reported, and the result
     carries a confidence level reflecting how much real data was available.
+
+    When ``signals`` (species presence + fishing activity) are supplied, they
+    contribute additional scored factors, each likewise skipped if unavailable.
     """
     score = 50
     reasons: list[str] = []
@@ -73,6 +157,10 @@ def build_fishing_advice(request: AdviceRequest, conditions: dict) -> dict:
         score -= 5
         reasons.append("Very deep targets add complexity for a simple trip plan.")
 
+    signal_summary: dict | None = None
+    if signals is not None:
+        score, signal_summary = _score_signals(request, signals, score, reasons)
+
     score = max(0, min(100, score))
 
     if score >= 80:
@@ -94,7 +182,7 @@ def build_fishing_advice(request: AdviceRequest, conditions: dict) -> dict:
     else:
         confidence = "low"
 
-    return {
+    result = {
         "score": score,
         "label": label,
         "summary": f"{label.title()} conditions for {request.species.lower()} fishing.",
@@ -102,3 +190,6 @@ def build_fishing_advice(request: AdviceRequest, conditions: dict) -> dict:
         "confidence": confidence,
         "data_completeness": {"available": available, "missing": missing},
     }
+    if signal_summary is not None:
+        result["signals_considered"] = signal_summary
+    return result
