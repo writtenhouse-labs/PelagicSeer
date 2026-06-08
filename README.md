@@ -36,6 +36,14 @@ pip install -r requirements.txt
 streamlit run app.py
 ```
 
+## Run Everything
+```powershell
+cd C:\Users\sarah\Source\Repos\PelagicSeer
+.\start.ps1
+```
+
+Use `.\start.ps1 -Install` to create missing virtual environments and refresh dependencies before starting.
+
 ## Future Vision
 - Historical catch prediction
 - Machine learning models

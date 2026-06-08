@@ -1,4 +1,5 @@
 from typing import Any
+import os
 
 import httpx
 
@@ -8,6 +9,7 @@ import httpx
 ERDDAP_GRIDDAP_URL = (
     "https://coastwatch.pfeg.noaa.gov/erddap/griddap/jplMURSST41.json"
 )
+HTTP_TIMEOUT_SECONDS = float(os.getenv("PELAGICSEER_HTTP_TIMEOUT_SECONDS", "300"))
 
 
 def _celsius_to_fahrenheit(celsius: float) -> float:
@@ -27,7 +29,7 @@ def get_erddap_sst(latitude: float, longitude: float) -> dict[str, Any]:
     query = f"analysed_sst[(last)][({latitude})][({longitude})]"
     url = f"{ERDDAP_GRIDDAP_URL}?{query}"
 
-    with httpx.Client(timeout=20) as client:
+    with httpx.Client(timeout=HTTP_TIMEOUT_SECONDS) as client:
         response = client.get(url)
         response.raise_for_status()
 

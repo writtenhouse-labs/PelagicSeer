@@ -1,4 +1,5 @@
 import math
+import os
 from typing import Any
 from xml.etree import ElementTree
 
@@ -7,6 +8,7 @@ import httpx
 
 NDBC_REALTIME_URL = "https://www.ndbc.noaa.gov/data/realtime2/{station}.txt"
 NDBC_ACTIVE_STATIONS_URL = "https://www.ndbc.noaa.gov/activestations.xml"
+HTTP_TIMEOUT_SECONDS = float(os.getenv("PELAGICSEER_HTTP_TIMEOUT_SECONDS", "300"))
 
 # Parsed station list is cached for the process lifetime; the active-station
 # roster changes rarely and the file is ~1 MB, so we avoid refetching per call.
@@ -29,7 +31,7 @@ def load_active_stations() -> list[dict[str, Any]]:
     if _station_cache is not None:
         return _station_cache
 
-    with httpx.Client(timeout=20) as client:
+    with httpx.Client(timeout=HTTP_TIMEOUT_SECONDS) as client:
         response = client.get(NDBC_ACTIVE_STATIONS_URL)
         response.raise_for_status()
 
@@ -59,21 +61,41 @@ def load_active_stations() -> list[dict[str, Any]]:
 
 def find_nearest_ndbc_station(latitude: float, longitude: float) -> dict[str, Any]:
     """Return the active NDBC station closest to the given lat/lon."""
+    return find_nearest_ndbc_stations(latitude, longitude, limit=1)[0]
+
+
+def find_nearest_ndbc_stations(
+    latitude: float,
+    longitude: float,
+    limit: int = 5,
+) -> list[dict[str, Any]]:
+    """Return the closest active NDBC stations for a lat/lon."""
     stations = load_active_stations()
-    nearest = min(
+    nearest_stations = sorted(
         stations,
         key=lambda s: _haversine_nm(latitude, longitude, s["latitude"], s["longitude"]),
-    )
-    distance_nm = _haversine_nm(
-        latitude, longitude, nearest["latitude"], nearest["longitude"]
-    )
-    return {**nearest, "distance_nm": round(distance_nm, 1)}
+    )[:limit]
+    return [
+        {
+            **station,
+            "distance_nm": round(
+                _haversine_nm(
+                    latitude,
+                    longitude,
+                    station["latitude"],
+                    station["longitude"],
+                ),
+                1,
+            ),
+        }
+        for station in nearest_stations
+    ]
 
 
 def get_latest_ndbc_observation(station: str) -> dict[str, Any]:
     url = NDBC_REALTIME_URL.format(station=station.upper())
 
-    with httpx.Client(timeout=15) as client:
+    with httpx.Client(timeout=HTTP_TIMEOUT_SECONDS) as client:
         response = client.get(url)
         response.raise_for_status()
 

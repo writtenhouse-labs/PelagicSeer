@@ -35,6 +35,17 @@ _NO_SIGNALS = {
 
 def test_advice_returns_live_conditions_and_recommendation(monkeypatch) -> None:
     monkeypatch.setattr(
+        "api.main.resolve_location",
+        lambda city, state: {
+            "city": city,
+            "state": state,
+            "latitude": 32.7157,
+            "longitude": -117.1611,
+            "ocean_distance_miles": 4.2,
+            "too_far_from_ocean": False,
+        },
+    )
+    monkeypatch.setattr(
         "api.main.collect_conditions_with_fallback",
         lambda latitude, longitude: dict(_FULL_CONDITIONS),
     )
@@ -46,8 +57,8 @@ def test_advice_returns_live_conditions_and_recommendation(monkeypatch) -> None:
     response = client.post(
         "/advice",
         json={
-            "latitude": 32.7157,
-            "longitude": -117.1611,
+            "city": "San Diego",
+            "state": "CA",
             "species": "tuna",
             "target_depth_ft": 250,
         },
@@ -66,6 +77,17 @@ def test_advice_returns_live_conditions_and_recommendation(monkeypatch) -> None:
 def test_advice_degrades_when_data_is_missing(monkeypatch) -> None:
     partial = {"source": "noaa-live", "sea_surface_temp_f": 72.4}
     monkeypatch.setattr(
+        "api.main.resolve_location",
+        lambda city, state: {
+            "city": city,
+            "state": state,
+            "latitude": 32.7157,
+            "longitude": -117.1611,
+            "ocean_distance_miles": 4.2,
+            "too_far_from_ocean": False,
+        },
+    )
+    monkeypatch.setattr(
         "api.main.collect_conditions_with_fallback",
         lambda latitude, longitude: dict(partial),
     )
@@ -76,7 +98,7 @@ def test_advice_degrades_when_data_is_missing(monkeypatch) -> None:
 
     response = client.post(
         "/advice",
-        json={"latitude": 32.7157, "longitude": -117.1611, "species": "tuna"},
+        json={"city": "San Diego", "state": "CA", "species": "tuna"},
     )
 
     assert response.status_code == 200
@@ -90,17 +112,41 @@ def test_advice_degrades_when_data_is_missing(monkeypatch) -> None:
     }
 
 
-def test_advice_validates_coordinates() -> None:
+def test_advice_validates_location() -> None:
     response = client.post(
         "/advice",
         json={
-            "latitude": 120,
-            "longitude": -117.1611,
+            "city": "",
+            "state": "CA",
             "species": "tuna",
         },
     )
 
     assert response.status_code == 422
+
+
+def test_advice_returns_too_far_message(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "api.main.resolve_location",
+        lambda city, state: {
+            "city": city,
+            "state": state,
+            "latitude": 33.4484,
+            "longitude": -112.074,
+            "ocean_distance_miles": 320.0,
+            "too_far_from_ocean": True,
+        },
+    )
+
+    response = client.post(
+        "/advice",
+        json={"city": "Phoenix", "state": "AZ", "species": "tuna"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["recommendation"]["summary"] == "You're too far from the Ocean to fish silly"
+    assert body["conditions"] == {}
 
 
 def test_noaa_capabilities() -> None:
@@ -147,8 +193,10 @@ def test_collector_normalizes_and_records_provenance(monkeypatch) -> None:
     )
     monkeypatch.setattr(
         ec,
-        "find_nearest_ndbc_station",
-        lambda latitude, longitude: {"station": "46086", "name": "SAN CLEMENTE BASIN", "distance_nm": 12.3},
+        "find_nearest_ndbc_stations",
+        lambda latitude, longitude: [
+            {"station": "46086", "name": "SAN CLEMENTE BASIN", "distance_nm": 12.3}
+        ],
     )
     monkeypatch.setattr(
         ec,
@@ -165,6 +213,44 @@ def test_collector_normalizes_and_records_provenance(monkeypatch) -> None:
     assert conditions["wind_speed_kts"] == 9.7  # 5.0 m/s
     assert conditions["barometric_pressure_mb"] == 1015.0
     assert conditions["missing"] == ["current_speed_kts"]
+
+
+def test_collector_tries_next_ndbc_station_when_realtime_feed_is_missing(
+    monkeypatch,
+) -> None:
+    from agents import environment_collector as ec
+
+    monkeypatch.setattr(
+        ec,
+        "get_erddap_sst",
+        lambda latitude, longitude: {
+            "sea_surface_temp_f": 71.0,
+            "dataset": "jplMURSST41",
+            "observed_time": "2026-06-04T09:00:00Z",
+        },
+    )
+    monkeypatch.setattr(
+        ec,
+        "find_nearest_ndbc_stations",
+        lambda latitude, longitude: [
+            {"station": "BAD1", "name": "Missing realtime", "distance_nm": 1.0},
+            {"station": "GOOD1", "name": "Working realtime", "distance_nm": 5.0},
+        ],
+    )
+
+    def fake_latest_ndbc(station: str) -> dict:
+        if station == "BAD1":
+            raise ValueError("404 Not Found")
+        return {"observation": {"WVHT": "1.0", "WSPD": "4.0"}}
+
+    monkeypatch.setattr(ec, "get_latest_ndbc_observation", fake_latest_ndbc)
+
+    conditions = ec.collect_conditions(32.7157, -117.1611)
+
+    ndbc_source = next(source for source in conditions["sources"] if source["id"] == "noaa-ndbc")
+    assert ndbc_source["status"] == "ok"
+    assert ndbc_source["station"] == "GOOD1"
+    assert conditions["wave_height_ft"] == 3.3
 
 
 def test_gfw_effort_endpoint(monkeypatch) -> None:
@@ -249,9 +335,7 @@ def test_advisor_scores_signals() -> None:
     from agents.orchestrator import build_fishing_advice
     from api.schemas import AdviceRequest
 
-    request = AdviceRequest(
-        latitude=32.7, longitude=-117.1, species="tuna", target_depth_ft=250
-    )
+    request = AdviceRequest(city="San Diego", state="CA", species="tuna", target_depth_ft=250)
     signals = {
         "scientific_name": "Thunnus albacares",
         "name_resolved": True,
@@ -260,26 +344,78 @@ def test_advisor_scores_signals() -> None:
             "total": 5,
             "depth_range_m": {"min": 0.0, "max": 300.0},
         },
-        "fishing_activity": {"available": True, "total_hours": 200.0, "in_season": True},
+        "fishing_activity": {
+            "available": True,
+            "recent_hours": 20.0,
+            "total_hours": 200.0,
+            "in_season": True,
+        },
+        "target_species_activity": {
+            "available": True,
+            "likely_recent_target_activity": True,
+            "species_occurrences_nearby": 5,
+            "recent_fishing_hours_nearby": 20.0,
+            "gfw_species_specific": False,
+        },
     }
 
     # No environmental data, so the base score of 50 isolates the signal factors:
-    # species present (+10), depth match (+5), high effort (+10), in season (+5).
+    # species present (+10), depth match (+5), recent effort (+8), in season (+5),
+    # and recent effort overlapping known habitat (+7).
     result = build_fishing_advice(request, conditions={}, signals=signals)
 
-    assert result["score"] == 80
+    assert result["score"] == 85
     assert result["label"] == "excellent"
     assert set(result["signals_considered"]["used"]) == {
         "species_presence",
         "fishing_activity",
+        "target_species_activity",
     }
+
+
+def test_collect_signals_combines_gfw_recent_effort_with_species_presence(
+    monkeypatch,
+) -> None:
+    from datetime import date
+
+    from agents import signal_collector as sc
+
+    monkeypatch.setattr(
+        sc,
+        "get_species_occurrences",
+        lambda scientific_name, latitude, longitude, buffer_deg: {
+            "total": 3,
+            "returned": 3,
+            "depth_range_m": {"min": 0.0, "max": 200.0},
+            "year_range": {"min": 2024, "max": 2026},
+        },
+    )
+    days_requested: list[int] = []
+
+    def fake_effort(latitude: float, longitude: float, days: int, today: date) -> dict:
+        days_requested.append(days)
+        if days == 30:
+            return {"total_apparent_fishing_hours": 12.5, "by_month": {"2026-06": 12.5}}
+        return {
+            "total_apparent_fishing_hours": 90.0,
+            "by_month": {"2026-04": 25.0, "2026-05": 50.0, "2026-06": 12.5},
+        }
+
+    monkeypatch.setattr(sc, "get_fishing_effort", fake_effort)
+
+    signals = sc.collect_signals("tuna", 32.7157, -117.1611, today=date(2026, 6, 8))
+
+    assert days_requested == [30, 365]
+    assert signals["target_species_activity"]["available"] is True
+    assert signals["target_species_activity"]["likely_recent_target_activity"] is True
+    assert signals["target_species_activity"]["gfw_species_specific"] is False
 
 
 def test_signal_factors_omitted_without_signals() -> None:
     from agents.orchestrator import build_fishing_advice
     from api.schemas import AdviceRequest
 
-    request = AdviceRequest(latitude=32.7, longitude=-117.1, species="tuna")
+    request = AdviceRequest(city="San Diego", state="CA", species="tuna")
     result = build_fishing_advice(request, conditions=dict(_FULL_CONDITIONS))
 
     # Backward compatible: no signals passed -> no signal section, env score only.

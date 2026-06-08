@@ -1,9 +1,11 @@
 from typing import Any
+import os
 
 import httpx
 
 
 COOPS_DATA_URL = "https://api.tidesandcurrents.noaa.gov/api/prod/datagetter"
+HTTP_TIMEOUT_SECONDS = float(os.getenv("PELAGICSEER_HTTP_TIMEOUT_SECONDS", "300"))
 
 
 def get_latest_coops_observation(
@@ -23,7 +25,7 @@ def get_latest_coops_observation(
         "application": "PelagicSeer",
     }
 
-    with httpx.Client(timeout=15) as client:
+    with httpx.Client(timeout=HTTP_TIMEOUT_SECONDS) as client:
         response = client.get(COOPS_DATA_URL, params=params)
         response.raise_for_status()
 

@@ -15,7 +15,7 @@ from typing import Any
 import httpx
 
 from connectors.noaa_erddap import get_erddap_sst, get_mock_conditions
-from connectors.noaa_ndbc import find_nearest_ndbc_station, get_latest_ndbc_observation
+from connectors.noaa_ndbc import find_nearest_ndbc_stations, get_latest_ndbc_observation
 
 # Canonical fields the fishing advisor scores against.
 CONDITION_FIELDS = (
@@ -95,21 +95,31 @@ def collect_conditions(latitude: float, longitude: float) -> dict[str, Any]:
     except (httpx.HTTPError, ValueError) as exc:
         sources.append({"id": "noaa-erddap", "status": "error", "detail": str(exc)})
 
-    # Nearest NDBC buoy for waves, wind, pressure, and SST fallback.
+    # Nearest NDBC buoy for waves, wind, pressure, and SST fallback. Some
+    # active stations do not expose a realtime2 text feed, so try a few nearby
+    # stations before marking the source unavailable.
     try:
-        station = find_nearest_ndbc_station(latitude, longitude)
-        observation = get_latest_ndbc_observation(station["station"])["observation"]
-        for field, value in _normalize_ndbc(observation).items():
-            record(field, value, "noaa-ndbc")
-        sources.append(
-            {
-                "id": "noaa-ndbc",
-                "status": "ok",
-                "station": station["station"],
-                "station_name": station.get("name"),
-                "distance_nm": station.get("distance_nm"),
-            }
-        )
+        stations = find_nearest_ndbc_stations(latitude, longitude)
+        station_errors: list[str] = []
+        for station in stations:
+            try:
+                observation = get_latest_ndbc_observation(station["station"])["observation"]
+                for field, value in _normalize_ndbc(observation).items():
+                    record(field, value, "noaa-ndbc")
+                sources.append(
+                    {
+                        "id": "noaa-ndbc",
+                        "status": "ok",
+                        "station": station["station"],
+                        "station_name": station.get("name"),
+                        "distance_nm": station.get("distance_nm"),
+                    }
+                )
+                break
+            except (httpx.HTTPError, ValueError, KeyError) as exc:
+                station_errors.append(f"{station['station']}: {exc}")
+        else:
+            raise ValueError("; ".join(station_errors))
     except (httpx.HTTPError, ValueError, KeyError) as exc:
         sources.append({"id": "noaa-ndbc", "status": "error", "detail": str(exc)})
 

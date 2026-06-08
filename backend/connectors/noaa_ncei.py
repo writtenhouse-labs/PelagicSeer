@@ -25,6 +25,7 @@ from typing import Any
 import httpx
 
 NCEI_BASE_URL = "https://www.ncdc.noaa.gov/cdo-web/api/v2"
+HTTP_TIMEOUT_SECONDS = float(os.getenv("PELAGICSEER_HTTP_TIMEOUT_SECONDS", "300"))
 
 
 def _token() -> str:
@@ -45,7 +46,7 @@ def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
 
 def _get(path: str, params: dict[str, Any]) -> dict[str, Any]:
     headers = {"token": _token()}
-    with httpx.Client(timeout=30) as client:
+    with httpx.Client(timeout=HTTP_TIMEOUT_SECONDS) as client:
         response = client.get(f"{NCEI_BASE_URL}/{path}", params=params, headers=headers)
         response.raise_for_status()
     # CDO returns an empty body (not an error) when a query has no results.

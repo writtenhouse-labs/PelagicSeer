@@ -54,9 +54,9 @@ COMMON_TO_SCIENTIFIC = {
     "cod": "Gadus morhua",
 }
 
-# Total apparent fishing hours (over the year window) at or above which we treat
-# the area as notably active.
+# Apparent fishing hours at or above which we treat the area as notably active.
 EFFORT_NOTABLE_HOURS = 50.0
+RECENT_EFFORT_NOTABLE_HOURS = 10.0
 
 
 def resolve_scientific_name(species: str) -> tuple[str, bool]:
@@ -93,10 +93,13 @@ def collect_signals(
         sources.append({"id": "obis", "status": "error", "detail": str(exc)})
 
     fishing_activity: dict[str, Any] = {"available": False}
+    target_species_activity: dict[str, Any] = {"available": False}
     try:
-        # A full year gives a seasonality curve for the in-season check.
-        effort = get_fishing_effort(latitude, longitude, days=365, today=today)
-        by_month = effort.get("by_month", {})
+        # A short window answers "is this area being fished recently?" while a
+        # full year gives a seasonality curve for the in-season check.
+        recent_effort = get_fishing_effort(latitude, longitude, days=30, today=today)
+        yearly_effort = get_fishing_effort(latitude, longitude, days=365, today=today)
+        by_month = yearly_effort.get("by_month", {})
         now = today or date.today()
         current_key = now.strftime("%Y-%m")
 
@@ -112,7 +115,8 @@ def collect_signals(
 
         fishing_activity = {
             "available": True,
-            "total_hours": effort.get("total_apparent_fishing_hours", 0.0),
+            "recent_hours": recent_effort.get("total_apparent_fishing_hours", 0.0),
+            "total_hours": yearly_effort.get("total_apparent_fishing_hours", 0.0),
             "peak_month": peak_month,
             "current_month": current_key,
             "current_month_hours": round(by_month.get(current_key, 0.0), 1),
@@ -121,6 +125,20 @@ def collect_signals(
             # busiest month's effort.
             "in_season": peak_hours > 0 and historical_month_hours >= 0.5 * peak_hours,
         }
+        if species_presence.get("available"):
+            presence_total = species_presence.get("total", 0)
+            recent_hours = fishing_activity["recent_hours"]
+            likely_recent_target_activity = (
+                presence_total > 0 and recent_hours >= RECENT_EFFORT_NOTABLE_HOURS
+            )
+            target_species_activity = {
+                "available": True,
+                "likely_recent_target_activity": likely_recent_target_activity,
+                "species_occurrences_nearby": presence_total,
+                "recent_fishing_hours_nearby": recent_hours,
+                "gfw_species_specific": False,
+                "basis": "OBIS species presence combined with GFW apparent fishing effort",
+            }
         sources.append({"id": "global-fishing-watch", "status": "ok"})
     except (httpx.HTTPError, ValueError) as exc:
         # ValueError also covers a missing GFW_API_TOKEN.
@@ -132,5 +150,6 @@ def collect_signals(
         "name_resolved": name_resolved,
         "species_presence": species_presence,
         "fishing_activity": fishing_activity,
+        "target_species_activity": target_species_activity,
         "sources": sources,
     }

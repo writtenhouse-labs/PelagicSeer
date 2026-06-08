@@ -11,6 +11,7 @@ from connectors.obis import get_species_occurrences
 from connectors.noaa_coops import get_latest_coops_observation
 from connectors.noaa_ncei import get_ncei_datasets, get_ncei_station_summary
 from connectors.noaa_ndbc import get_latest_ndbc_observation
+from services.location_resolver import TOO_FAR_MESSAGE, resolve_location
 
 app = FastAPI(title="PelagicSeer API")
 
@@ -22,15 +23,39 @@ def health() -> dict[str, str]:
 
 @app.post("/advice")
 def advice(request: AdviceRequest) -> dict:
-    conditions = collect_conditions_with_fallback(request.latitude, request.longitude)
-    signals = collect_signals(request.species, request.latitude, request.longitude)
+    try:
+        location = resolve_location(request.city, request.state)
+    except (httpx.HTTPError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    latitude = location["latitude"]
+    longitude = location["longitude"]
+
+    if location["too_far_from_ocean"]:
+        return {
+            "location": location,
+            "species": request.species,
+            "conditions": {},
+            "signals": {},
+            "recommendation": {
+                "score": 0,
+                "label": "too_far",
+                "summary": TOO_FAR_MESSAGE,
+                "reasons": [
+                    f"{request.city}, {request.state} is about "
+                    f"{location['ocean_distance_miles']} miles from the nearest ocean station."
+                ],
+                "confidence": "high",
+                "data_completeness": {"available": [], "missing": []},
+            },
+        }
+
+    conditions = collect_conditions_with_fallback(latitude, longitude)
+    signals = collect_signals(request.species, latitude, longitude)
     recommendation = build_fishing_advice(request, conditions, signals)
 
     return {
-        "location": {
-            "latitude": request.latitude,
-            "longitude": request.longitude,
-        },
+        "location": location,
         "species": request.species,
         "conditions": conditions,
         "signals": signals,

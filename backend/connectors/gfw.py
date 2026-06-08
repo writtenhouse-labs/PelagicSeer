@@ -18,6 +18,7 @@ import httpx
 
 GFW_REPORT_URL = "https://gateway.api.globalfishingwatch.org/v3/4wings/report"
 GFW_EFFORT_DATASET = "public-global-fishing-effort:latest"
+HTTP_TIMEOUT_SECONDS = float(os.getenv("PELAGICSEER_HTTP_TIMEOUT_SECONDS", "300"))
 
 
 def _bbox_polygon(latitude: float, longitude: float, buffer_deg: float) -> dict[str, Any]:
@@ -68,7 +69,7 @@ def get_fishing_effort(
     body = {"geojson": _bbox_polygon(latitude, longitude, buffer_deg)}
     headers = {"Authorization": f"Bearer {token}"}
 
-    with httpx.Client(timeout=30) as client:
+    with httpx.Client(timeout=HTTP_TIMEOUT_SECONDS) as client:
         response = client.post(GFW_REPORT_URL, params=params, json=body, headers=headers)
         response.raise_for_status()
 

@@ -9,10 +9,12 @@ docs/noaa_data_sources.md: "where has this species been observed near here?"
 """
 
 from typing import Any
+import os
 
 import httpx
 
 OBIS_OCCURRENCE_URL = "https://api.obis.org/v3/occurrence"
+HTTP_TIMEOUT_SECONDS = float(os.getenv("PELAGICSEER_HTTP_TIMEOUT_SECONDS", "300"))
 
 
 def _bbox_wkt(latitude: float, longitude: float, buffer_deg: float) -> str:
@@ -44,7 +46,7 @@ def get_species_occurrences(
         "size": size,
     }
 
-    with httpx.Client(timeout=30) as client:
+    with httpx.Client(timeout=HTTP_TIMEOUT_SECONDS) as client:
         response = client.get(OBIS_OCCURRENCE_URL, params=params)
         response.raise_for_status()
 

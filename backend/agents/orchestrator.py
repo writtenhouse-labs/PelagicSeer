@@ -13,6 +13,7 @@ SCORABLE_FIELDS = (
 # Apparent fishing hours (over the GFW year window) at or above which the area
 # reads as notably active.
 _EFFORT_NOTABLE_HOURS = 50.0
+_RECENT_EFFORT_NOTABLE_HOURS = 10.0
 _FT_TO_M = 0.3048
 
 
@@ -62,23 +63,50 @@ def _score_signals(
         missing.append("fishing_activity")
         reasons.append("Fishing-effort data was unavailable (GFW).")
     else:
+        recent_hours = activity.get("recent_hours", activity.get("total_hours", 0.0))
         hours = activity.get("total_hours", 0.0)
-        if hours >= _EFFORT_NOTABLE_HOURS:
+        if recent_hours >= _RECENT_EFFORT_NOTABLE_HOURS:
             used.append("fishing_activity")
-            score += 10
+            score += 8
             reasons.append(
-                f"High recent commercial fishing effort nearby ({hours:.0f} hrs) suggests active grounds."
+                f"Recent commercial fishing effort nearby ({recent_hours:.0f} hrs in the last 30 days) suggests active grounds."
+            )
+        elif recent_hours > 0:
+            used.append("fishing_activity")
+            score += 3
+            reasons.append(
+                f"Some recent commercial fishing effort nearby ({recent_hours:.0f} hrs in the last 30 days)."
+            )
+        elif hours >= _EFFORT_NOTABLE_HOURS:
+            used.append("fishing_activity")
+            score += 5
+            reasons.append(
+                f"Historically high commercial fishing effort nearby ({hours:.0f} hrs over the past year)."
             )
         elif hours > 0:
             used.append("fishing_activity")
-            score += 3
-            reasons.append(f"Some recent commercial fishing effort nearby ({hours:.0f} hrs).")
+            reasons.append(f"Some historical commercial fishing effort nearby ({hours:.0f} hrs over the past year).")
         else:
             used.append("fishing_activity")
             reasons.append("No recent commercial fishing effort recorded nearby (GFW).")
         if activity.get("in_season"):
             score += 5
             reasons.append("This month is historically active for fishing at this location.")
+
+    target_activity = signals.get("target_species_activity", {})
+    if not target_activity.get("available"):
+        missing.append("target_species_activity")
+    elif target_activity.get("likely_recent_target_activity"):
+        used.append("target_species_activity")
+        score += 7
+        reasons.append(
+            f"Recent GFW fishing effort overlaps nearby {species_label} occurrence records; GFW effort is not species-specific catch data."
+        )
+    elif target_activity.get("species_occurrences_nearby", 0) > 0:
+        used.append("target_species_activity")
+        reasons.append(
+            f"{species_label} has nearby occurrence records, but GFW does not show notable recent fishing effort in this area."
+        )
 
     summary = {
         "used": used,
