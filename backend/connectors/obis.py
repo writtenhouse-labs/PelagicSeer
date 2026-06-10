@@ -14,6 +14,7 @@ from typing import Any
 import httpx
 
 OBIS_OCCURRENCE_URL = "https://api.obis.org/v3/occurrence"
+OBIS_CHECKLIST_URL = "https://api.obis.org/v3/checklist"
 HTTP_TIMEOUT_SECONDS = float(os.getenv("PELAGICSEER_HTTP_TIMEOUT_SECONDS", "300"))
 
 OCEAN_BOUNDS = {
@@ -49,18 +50,24 @@ def get_species_occurrences(
     longitude: float,
     buffer_deg: float = 1.0,
     size: int = 100,
+    startdate: str | None = None,
+    enddate: str | None = None,
 ) -> dict[str, Any]:
     """Return OBIS occurrence records for a species near a lat/lon.
 
     ``total`` is the full count of matching records; ``occurrences`` is a
     sample of up to ``size`` records with the fishing-relevant fields. Also
-    summarizes the observed depth and year ranges.
+    summarizes the observed depth and year ranges. ``startdate``/``enddate``
+    (ISO ``YYYY-MM-DD``) restrict occurrences to a window when given together.
     """
-    params = {
+    params: dict[str, Any] = {
         "scientificname": scientificname,
         "geometry": _bbox_wkt(latitude, longitude, buffer_deg),
         "size": size,
     }
+    if startdate and enddate:
+        params["startdate"] = startdate
+        params["enddate"] = enddate
 
     with httpx.Client(timeout=HTTP_TIMEOUT_SECONDS) as client:
         response = client.get(OBIS_OCCURRENCE_URL, params=params)
@@ -100,6 +107,7 @@ def get_species_occurrences(
         "returned": len(occurrences),
         "depth_range_m": {"min": min(depths), "max": max(depths)} if depths else None,
         "year_range": {"min": min(years), "max": max(years)} if years else None,
+        "date_range": {"start": startdate, "end": enddate} if startdate and enddate else None,
         "occurrences": occurrences,
     }
 
@@ -180,4 +188,57 @@ def get_species_ocean_map(
         "date_range": {"start": startdate, "end": enddate} if startdate and enddate else None,
         "year_range": {"min": min(years), "max": max(years)} if years else None,
         "points": points,
+    }
+
+
+def get_area_species(
+    latitude: float,
+    longitude: float,
+    buffer_deg: float = 2.0,
+    startdate: str | None = None,
+    enddate: str | None = None,
+    limit: int = 25,
+) -> dict[str, Any]:
+    """Return the species observed in a box around a lat/lon, ranked by records.
+
+    Answers "what's here?" rather than "is *this* species here?": queries the
+    OBIS checklist endpoint for everything recorded in the bounding box and
+    returns the most-recorded taxa. ``startdate``/``enddate`` (ISO) restrict the
+    window when given together.
+    """
+    params: dict[str, Any] = {"geometry": _bbox_wkt(latitude, longitude, buffer_deg)}
+    if startdate and enddate:
+        params["startdate"] = startdate
+        params["enddate"] = enddate
+
+    with httpx.Client(timeout=HTTP_TIMEOUT_SECONDS) as client:
+        response = client.get(OBIS_CHECKLIST_URL, params=params)
+        response.raise_for_status()
+
+    payload = response.json()
+    results = payload.get("results", [])
+
+    species: list[dict[str, Any]] = []
+    for row in results:
+        scientific_name = row.get("scientificName")
+        if not scientific_name:
+            continue
+        species.append(
+            {
+                "scientific_name": scientific_name,
+                "records": row.get("records", 0),
+                "taxon_rank": row.get("taxonRank"),
+            }
+        )
+
+    species.sort(key=lambda item: item.get("records", 0), reverse=True)
+
+    return {
+        "source": "obis",
+        "latitude": latitude,
+        "longitude": longitude,
+        "buffer_deg": buffer_deg,
+        "date_range": {"start": startdate, "end": enddate} if startdate and enddate else None,
+        "total_species": len(species),
+        "species": species[:limit],
     }

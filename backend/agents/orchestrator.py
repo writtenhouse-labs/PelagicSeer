@@ -1,3 +1,4 @@
+from agents.temporal_router import TemporalPlan
 from api.schemas import AdviceRequest
 
 # Fields the score depends on. Used to report how complete the input was and
@@ -120,6 +121,7 @@ def build_fishing_advice(
     request: AdviceRequest,
     conditions: dict,
     signals: dict | None = None,
+    plan: TemporalPlan | None = None,
 ) -> dict:
     """Rule-based advisor placeholder for the future Claude/LangChain agent.
 
@@ -129,6 +131,10 @@ def build_fishing_advice(
 
     When ``signals`` (species presence + fishing activity) are supplied, they
     contribute additional scored factors, each likewise skipped if unavailable.
+
+    When ``plan`` is supplied, the temporal mode is reported and a future-dated
+    (forecast) window caps confidence, since conditions are then only a nowcast
+    proxy rather than real observations for the requested days.
     """
     score = 50
     reasons: list[str] = []
@@ -181,6 +187,27 @@ def build_fishing_advice(
     elif pressure is None:
         reasons.append("Pressure data was unavailable, so it did not factor into the score.")
 
+    # Chlorophyll is a productivity proxy: moderate values mark fertile water
+    # that feeds the bait pelagics follow; very low is a blue-water desert and
+    # very high is often murky, near-shore bloom. Extra context, not part of the
+    # confidence math, so it is only scored when present.
+    chlorophyll = conditions.get("chlorophyll_mg_m3")
+    if chlorophyll is not None:
+        if 0.1 <= chlorophyll <= 2.0:
+            score += 8
+            reasons.append(
+                f"Chlorophyll ({chlorophyll} mg/m^3) indicates productive water likely to hold bait."
+            )
+        elif chlorophyll < 0.1:
+            score -= 3
+            reasons.append(
+                f"Low chlorophyll ({chlorophyll} mg/m^3) suggests sparse, blue-water conditions."
+            )
+        else:
+            reasons.append(
+                f"High chlorophyll ({chlorophyll} mg/m^3) suggests turbid, near-shore bloom water."
+            )
+
     if request.target_depth_ft and request.target_depth_ft > 1000:
         score -= 5
         reasons.append("Very deep targets add complexity for a simple trip plan.")
@@ -210,6 +237,22 @@ def build_fishing_advice(
     else:
         confidence = "low"
 
+    # A future-dated window has no real observations, so conditions are only a
+    # nowcast proxy: report the mode and never claim better than medium.
+    if plan is not None:
+        if plan.mode == "historical":
+            reasons.append(
+                f"Conditions reflect archived observations near {plan.target_date.isoformat()} "
+                "(historical window)."
+            )
+        elif plan.mode == "forecast":
+            reasons.append(
+                "Requested window is in the future; conditions are a latest-observation proxy, "
+                "so confidence is capped."
+            )
+            if confidence == "high":
+                confidence = "medium"
+
     result = {
         "score": score,
         "label": label,
@@ -218,6 +261,8 @@ def build_fishing_advice(
         "confidence": confidence,
         "data_completeness": {"available": available, "missing": missing},
     }
+    if plan is not None:
+        result["temporal_mode"] = plan.mode
     if signal_summary is not None:
         result["signals_considered"] = signal_summary
     return result

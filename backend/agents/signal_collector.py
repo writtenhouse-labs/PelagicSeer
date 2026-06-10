@@ -16,8 +16,9 @@ from typing import Any
 
 import httpx
 
+from agents.temporal_router import TemporalPlan
 from connectors.gfw import get_fishing_effort
-from connectors.obis import get_species_occurrences
+from connectors.obis import get_area_species, get_species_occurrences
 
 # Curated common-name -> scientific-name map for popular targets. Falls back to
 # the raw input when unmatched (the user may already type a scientific name).
@@ -84,14 +85,33 @@ def collect_signals(
     latitude: float,
     longitude: float,
     today: date | None = None,
+    plan: TemporalPlan | None = None,
 ) -> dict[str, Any]:
-    """Gather species-presence (OBIS) and fishing-activity (GFW) signals."""
+    """Gather species-presence (OBIS) and fishing-activity (GFW) signals.
+
+    When ``plan`` is given, OBIS presence is restricted to the plan's date
+    window and the GFW "recent" window matches the plan span anchored at its
+    end; otherwise the original today / 30-day behavior is used.
+    """
     scientific_name, name_resolved = resolve_scientific_name(species)
     sources: list[dict[str, Any]] = []
 
+    if plan is not None:
+        today = plan.end_date
+        startdate, enddate = plan.start_date.isoformat(), plan.end_date.isoformat()
+        recent_days = plan.days_span
+    else:
+        startdate = enddate = None
+        recent_days = 30
+
     species_presence: dict[str, Any] = {"available": False}
     try:
-        occ = get_species_occurrences(scientific_name, latitude, longitude, buffer_deg=2.0)
+        occ_kwargs: dict[str, Any] = {}
+        if startdate and enddate:
+            occ_kwargs = {"startdate": startdate, "enddate": enddate}
+        occ = get_species_occurrences(
+            scientific_name, latitude, longitude, buffer_deg=2.0, **occ_kwargs
+        )
         species_presence = {
             "available": True,
             "scientific_name": scientific_name,
@@ -99,6 +119,7 @@ def collect_signals(
             "returned": occ.get("returned", 0),
             "depth_range_m": occ.get("depth_range_m"),
             "year_range": occ.get("year_range"),
+            "date_range": occ.get("date_range"),
         }
         sources.append({"id": "obis", "status": "ok", "total": occ.get("total", 0)})
     except (httpx.HTTPError, ValueError) as exc:
@@ -109,7 +130,7 @@ def collect_signals(
     try:
         # A short window answers "is this area being fished recently?" while a
         # full year gives a seasonality curve for the in-season check.
-        recent_effort = get_fishing_effort(latitude, longitude, days=30, today=today)
+        recent_effort = get_fishing_effort(latitude, longitude, days=recent_days, today=today)
         yearly_effort = get_fishing_effort(latitude, longitude, days=365, today=today)
         by_month = yearly_effort.get("by_month", {})
         now = today or date.today()
@@ -165,3 +186,34 @@ def collect_signals(
         "target_species_activity": target_species_activity,
         "sources": sources,
     }
+
+
+def collect_area_species(
+    latitude: float,
+    longitude: float,
+    plan: TemporalPlan | None = None,
+    buffer_deg: float = 2.0,
+    limit: int = 15,
+) -> dict[str, Any]:
+    """Discover which species are recorded near a lat/lon (OBIS checklist).
+
+    Answers "what fish are here?" rather than targeting one species. Each
+    returned taxon is annotated with a common name when we recognize it.
+    Degrades to ``{"available": False, ...}`` if OBIS is unavailable.
+    """
+    startdate = plan.start_date.isoformat() if plan is not None else None
+    enddate = plan.end_date.isoformat() if plan is not None else None
+    try:
+        result = get_area_species(
+            latitude,
+            longitude,
+            buffer_deg=buffer_deg,
+            startdate=startdate,
+            enddate=enddate,
+            limit=limit,
+        )
+        for entry in result["species"]:
+            entry["common_name"] = resolve_common_name(entry["scientific_name"])
+        return {"available": True, **result}
+    except (httpx.HTTPError, ValueError) as exc:
+        return {"available": False, "detail": str(exc)}

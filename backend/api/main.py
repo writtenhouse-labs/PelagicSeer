@@ -6,7 +6,13 @@ from fastapi import HTTPException
 
 from agents.environment_collector import collect_conditions_with_fallback
 from agents.orchestrator import build_fishing_advice
-from agents.signal_collector import collect_signals, resolve_common_name, resolve_scientific_name
+from agents.signal_collector import (
+    collect_area_species,
+    collect_signals,
+    resolve_common_name,
+    resolve_scientific_name,
+)
+from agents.temporal_router import resolve_temporal_plan
 from api.schemas import AdviceRequest
 from connectors.gfw import get_fishing_effort
 from connectors.inport import DEFAULT_HARVEST_KEYWORDS, harvest_inport_catalog, inspect_inport_item
@@ -34,12 +40,21 @@ def advice(request: AdviceRequest) -> dict:
     latitude = location["latitude"]
     longitude = location["longitude"]
 
+    today = date.today()
+    plan = resolve_temporal_plan(
+        request.start_date or today,
+        request.end_date or today,
+        today=today,
+    )
+
     if location["too_far_from_ocean"]:
         return {
             "location": location,
             "species": request.species,
+            "date_range": plan.as_dict(),
             "conditions": {},
             "signals": {},
+            "area_species": {"available": False},
             "recommendation": {
                 "score": 0,
                 "label": "too_far",
@@ -53,17 +68,46 @@ def advice(request: AdviceRequest) -> dict:
             },
         }
 
-    conditions = collect_conditions_with_fallback(latitude, longitude)
-    signals = collect_signals(request.species, latitude, longitude)
-    recommendation = build_fishing_advice(request, conditions, signals)
+    conditions = collect_conditions_with_fallback(latitude, longitude, plan=plan)
+    signals = collect_signals(request.species, latitude, longitude, plan=plan)
+    area_species = collect_area_species(latitude, longitude, plan=plan)
+    recommendation = build_fishing_advice(request, conditions, signals, plan=plan)
 
     return {
         "location": location,
         "species": request.species,
+        "date_range": plan.as_dict(),
         "conditions": conditions,
         "signals": signals,
+        "area_species": area_species,
         "recommendation": recommendation,
     }
+
+
+@app.get("/species/in-area")
+def species_in_area(
+    latitude: float,
+    longitude: float,
+    buffer_deg: float = 2.0,
+    startdate: date | None = None,
+    enddate: date | None = None,
+    limit: int = 25,
+) -> dict:
+    """List the species recorded near a lat/lon (OBIS checklist), optionally
+    restricted to a date window."""
+    try:
+        if (startdate is None) != (enddate is None):
+            raise ValueError("startdate and enddate must be provided together")
+        if startdate and enddate and startdate > enddate:
+            raise ValueError("startdate cannot be after enddate")
+        plan = (
+            resolve_temporal_plan(startdate, enddate)
+            if startdate and enddate
+            else None
+        )
+        return collect_area_species(latitude, longitude, plan=plan, buffer_deg=buffer_deg, limit=limit)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.get("/noaa/capabilities")

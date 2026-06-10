@@ -5,6 +5,11 @@ from api.main import app
 client = TestClient(app)
 
 
+def _raise_offline(*args, **kwargs):
+    """Stand-in for a connector that is unavailable, to keep unit tests offline."""
+    raise ValueError("offline in test")
+
+
 def test_health() -> None:
     response = client.get("/health")
 
@@ -47,11 +52,15 @@ def test_advice_returns_live_conditions_and_recommendation(monkeypatch) -> None:
     )
     monkeypatch.setattr(
         "api.main.collect_conditions_with_fallback",
-        lambda latitude, longitude: dict(_FULL_CONDITIONS),
+        lambda latitude, longitude, plan=None: dict(_FULL_CONDITIONS),
     )
     monkeypatch.setattr(
         "api.main.collect_signals",
-        lambda species, latitude, longitude: dict(_NO_SIGNALS),
+        lambda species, latitude, longitude, plan=None: dict(_NO_SIGNALS),
+    )
+    monkeypatch.setattr(
+        "api.main.collect_area_species",
+        lambda latitude, longitude, plan=None: {"available": False},
     )
 
     response = client.post(
@@ -89,11 +98,15 @@ def test_advice_degrades_when_data_is_missing(monkeypatch) -> None:
     )
     monkeypatch.setattr(
         "api.main.collect_conditions_with_fallback",
-        lambda latitude, longitude: dict(partial),
+        lambda latitude, longitude, plan=None: dict(partial),
     )
     monkeypatch.setattr(
         "api.main.collect_signals",
-        lambda species, latitude, longitude: dict(_NO_SIGNALS),
+        lambda species, latitude, longitude, plan=None: dict(_NO_SIGNALS),
+    )
+    monkeypatch.setattr(
+        "api.main.collect_area_species",
+        lambda latitude, longitude, plan=None: {"available": False},
     )
 
     response = client.post(
@@ -191,11 +204,23 @@ def test_collector_normalizes_and_records_provenance(monkeypatch) -> None:
     monkeypatch.setattr(
         ec,
         "get_erddap_sst",
-        lambda latitude, longitude: {
+        lambda latitude, longitude, target_date=None: {
             "sea_surface_temp_f": 71.0,
             "dataset": "jplMURSST41",
             "observed_time": "2026-06-04T09:00:00Z",
         },
+    )
+    # Chlorophyll and CO-OPS unavailable here so the test stays offline and the
+    # canonical fields come only from ERDDAP SST + NDBC.
+    monkeypatch.setattr(
+        ec,
+        "get_erddap_chlorophyll",
+        _raise_offline,
+    )
+    monkeypatch.setattr(
+        ec,
+        "find_nearest_coops_stations",
+        lambda latitude, longitude, station_type="waterlevels", limit=5: [],
     )
     monkeypatch.setattr(
         ec,
@@ -229,11 +254,17 @@ def test_collector_tries_next_ndbc_station_when_realtime_feed_is_missing(
     monkeypatch.setattr(
         ec,
         "get_erddap_sst",
-        lambda latitude, longitude: {
+        lambda latitude, longitude, target_date=None: {
             "sea_surface_temp_f": 71.0,
             "dataset": "jplMURSST41",
             "observed_time": "2026-06-04T09:00:00Z",
         },
+    )
+    monkeypatch.setattr(ec, "get_erddap_chlorophyll", _raise_offline)
+    monkeypatch.setattr(
+        ec,
+        "find_nearest_coops_stations",
+        lambda latitude, longitude, station_type="waterlevels", limit=5: [],
     )
     monkeypatch.setattr(
         ec,
@@ -751,6 +782,101 @@ def test_signal_factors_omitted_without_signals() -> None:
     # Backward compatible: no signals passed -> no signal section, env score only.
     assert "signals_considered" not in result
     assert result["score"] == 100
+
+
+def test_temporal_router_classifies_windows() -> None:
+    from datetime import date
+
+    from agents.temporal_router import resolve_temporal_plan
+
+    today = date(2026, 6, 10)
+
+    live = resolve_temporal_plan(date(2026, 6, 8), date(2026, 6, 12), today=today)
+    assert live.mode == "live"
+    assert live.includes_today is True
+    assert live.target_date == today
+
+    historical = resolve_temporal_plan(date(2026, 5, 1), date(2026, 5, 31), today=today)
+    assert historical.mode == "historical"
+    assert historical.target_date == date(2026, 5, 31)
+    assert historical.days_span == 31
+
+    forecast = resolve_temporal_plan(date(2026, 7, 1), date(2026, 7, 5), today=today)
+    assert forecast.mode == "forecast"
+    assert forecast.target_date == today
+
+
+def test_advisor_caps_confidence_for_future_window() -> None:
+    from datetime import date
+
+    from agents.orchestrator import build_fishing_advice
+    from agents.temporal_router import resolve_temporal_plan
+    from api.schemas import AdviceRequest
+
+    request = AdviceRequest(city="San Diego", state="CA", species="tuna")
+    plan = resolve_temporal_plan(date(2026, 7, 1), date(2026, 7, 5), today=date(2026, 6, 10))
+
+    # Full conditions would normally yield high confidence; a future window caps it.
+    result = build_fishing_advice(request, conditions=dict(_FULL_CONDITIONS), plan=plan)
+
+    assert result["temporal_mode"] == "forecast"
+    assert result["confidence"] == "medium"
+
+
+def test_advisor_scores_chlorophyll_when_present() -> None:
+    from agents.orchestrator import build_fishing_advice
+    from api.schemas import AdviceRequest
+
+    request = AdviceRequest(city="San Diego", state="CA", species="tuna")
+    conditions = dict(_FULL_CONDITIONS)
+    conditions["chlorophyll_mg_m3"] = 0.5  # productive water -> +8, but capped at 100
+
+    result = build_fishing_advice(request, conditions=conditions)
+    assert any("productive water" in reason for reason in result["reasons"])
+
+
+def test_collect_area_species_annotates_common_names(monkeypatch) -> None:
+    from agents import signal_collector as sc
+
+    monkeypatch.setattr(
+        sc,
+        "get_area_species",
+        lambda latitude, longitude, buffer_deg, startdate, enddate, limit: {
+            "source": "obis",
+            "total_species": 2,
+            "species": [
+                {"scientific_name": "Thunnus albacares", "records": 120, "taxon_rank": "Species"},
+                {"scientific_name": "Coryphaena hippurus", "records": 40, "taxon_rank": "Species"},
+            ],
+        },
+    )
+
+    result = sc.collect_area_species(32.7157, -117.1611)
+
+    assert result["available"] is True
+    assert result["species"][0]["common_name"] == "Yellowfin Tuna"
+    assert result["species"][1]["common_name"] in {"Mahi-Mahi", "Dorado", "Mahi"}
+
+
+def test_species_in_area_endpoint(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "api.main.collect_area_species",
+        lambda latitude, longitude, plan=None, buffer_deg=2.0, limit=25: {
+            "available": True,
+            "total_species": 1,
+            "species": [{"scientific_name": "Thunnus albacares", "records": 9, "common_name": "Yellowfin Tuna"}],
+        },
+    )
+
+    response = client.get(
+        "/species/in-area",
+        params={"latitude": 32.7, "longitude": -117.1},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["available"] is True
+    assert body["species"][0]["common_name"] == "Yellowfin Tuna"
 
 
 def test_resolve_scientific_name() -> None:
