@@ -28,6 +28,8 @@ The API will be available at `http://127.0.0.1:8000`.
 - `GET /noaa/ndbc/latest/{station}`
 - `GET /gfw/effort?latitude=32.7&longitude=-117.1&days=30` — recent apparent fishing effort near a point from Global Fishing Watch.
 - `GET /obis/occurrences?scientificname=Thunnus%20albacares&latitude=32.7&longitude=-117.1` — marine species occurrence records near a point from OBIS (no token).
+- `GET /inport/items/{catalog_item_id}/distributions` — reads NOAA InPort metadata, extracts distribution URLs, classifies each URL, and reports the matching PelagicSeer connector type.
+- `GET /inport/harvest` — searches NOAA InPort for PelagicSeer keywords, inspects each item, and returns an agent-friendly catalog keyed by InPort item ID.
 - `GET /noaa/ncei/datasets` — list NCEI/CDO datasets (handy token check).
 - `GET /noaa/ncei/station-summary?latitude=32.7&longitude=-117.1&days=30` — recent daily summaries from the nearest *active* NCEI station.
 

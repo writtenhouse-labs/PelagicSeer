@@ -7,7 +7,7 @@ import streamlit as st
 
 API_BASE_URL = os.getenv("PELAGICSEER_API_BASE_URL", "http://127.0.0.1:8000")
 API_TIMEOUT_SECONDS = int(os.getenv("PELAGICSEER_API_TIMEOUT_SECONDS", "300"))
-ICON_PATH = Path(__file__).parent / "assets" / "BlueFinTuna.png"
+ICON_PATH = Path(__file__).parent / "assets" / "BluefinTuna.png"
 
 st.set_page_config(page_title="PelagicSeer", page_icon=str(ICON_PATH))
 
@@ -15,6 +15,7 @@ _, logo_column, _ = st.columns([1, 1, 1])
 with logo_column:
     st.image(str(ICON_PATH), width=160)
 st.title("PelagicSeer")
+st.page_link("pages/1_Multi_Source_Data_Mapper.py", label="Open Multi-Source Data Mapper")
 
 with st.form("advice-form"):
     city = st.text_input("City", value="San Diego")

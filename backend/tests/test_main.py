@@ -154,7 +154,13 @@ def test_noaa_capabilities() -> None:
 
     assert response.status_code == 200
     sources = response.json()["sources"]
-    assert {source["id"] for source in sources} >= {"coops", "ndbc", "erddap", "dismap"}
+    assert {source["id"] for source in sources} >= {
+        "coops",
+        "ndbc",
+        "erddap",
+        "dismap",
+        "inport",
+    }
 
 
 def test_latest_coops_observation(monkeypatch) -> None:
@@ -331,6 +337,330 @@ def test_obis_occurrences_endpoint(monkeypatch) -> None:
     assert body["total"] == 1234
 
 
+def test_inport_classifies_distribution_urls() -> None:
+    from connectors.inport import classify_distribution_url
+
+    assert classify_distribution_url("https://example.gov/erddap/griddap/dataset.csv") == "ERDDAP"
+    assert (
+        classify_distribution_url("https://example.gov/arcgis/rest/services/fish/MapServer")
+        == "ArcGIS REST"
+    )
+    assert classify_distribution_url("https://example.gov/thredds/catalog/data/catalog.xml") == "THREDDS"
+    assert classify_distribution_url("https://example.gov/downloads/data.csv") == "CSV Download"
+    assert classify_distribution_url("https://example.gov/downloads/data.zip") == "ZIP Download"
+    assert classify_distribution_url("https://example.gov/api/v1/datasets/123") == "API Endpoint"
+    assert classify_distribution_url("https://example.gov/dataset") == "Unknown"
+
+
+def test_inport_parses_metadata_and_registers_connectors() -> None:
+    from connectors.inport import parse_inport_metadata
+
+    xml = """<?xml version="1.0" encoding="UTF-8"?>
+<inport-metadata>
+  <item-identification>
+    <catalog-item-id>123</catalog-item-id>
+    <title>Example InPort Dataset</title>
+    <abstract>Useful dataset description.</abstract>
+    <catalog-item-type>Data Set</catalog-item-type>
+  </item-identification>
+  <distribution-info>
+    <distribution>
+      <name>ERDDAP Access</name>
+      <description>Access via https://coastwatch.noaa.gov/erddap/griddap/example.html</description>
+    </distribution>
+    <distribution>
+      <name>ArcGIS Access</name>
+      <description>Service at https://example.gov/arcgis/rest/services/fish/FeatureServer</description>
+    </distribution>
+    <distribution>
+      <name>THREDDS Access</name>
+      <description>Catalog https://example.gov/thredds/catalog/model/catalog.xml</description>
+    </distribution>
+  </distribution-info>
+  <urls>
+    <url>
+      <url>https://example.gov/data/latest.csv</url>
+      <name>CSV data</name>
+      <url-type>Download</url-type>
+      <description>Download CSV</description>
+    </url>
+    <url>
+      <url>https://example.gov/data/archive.zip</url>
+      <name>ZIP data</name>
+      <url-type>Download</url-type>
+      <description>Download ZIP</description>
+    </url>
+    <url>
+      <url>https://example.gov/api/v1/query?f=json</url>
+      <name>API</name>
+      <url-type>API</url-type>
+      <description>API endpoint</description>
+    </url>
+    <url>
+      <url>https://example.gov/readme</url>
+      <name>Readme</name>
+      <url-type>Online Resource</url-type>
+      <description>Landing page</description>
+    </url>
+  </urls>
+  <catalog-details>
+    <guid>gov.noaa.nmfs.inport:123</guid>
+    <owner-organization>Test Org</owner-organization>
+  </catalog-details>
+</inport-metadata>"""
+
+    metadata = parse_inport_metadata(xml)
+
+    assert metadata["catalog_item_id"] == "123"
+    assert metadata["title"] == "Example InPort Dataset"
+    assert metadata["description"] == "Useful dataset description."
+    assert metadata["distribution_count"] == 7
+    assert {item["classification"] for item in metadata["distributions"]} == {
+        "ERDDAP",
+        "ArcGIS REST",
+        "THREDDS",
+        "CSV Download",
+        "ZIP Download",
+        "API Endpoint",
+        "Unknown",
+    }
+    assert {item["connector"] for item in metadata["distributions"]} >= {
+        "erddap",
+        "arcgis_rest",
+        "thredds",
+    }
+
+
+def test_inport_parses_search_results() -> None:
+    from connectors.inport import parse_inport_search_results
+
+    html = """
+<html>
+  <body>
+    <a href="/inport/item/123">Yellowfin Tuna Survey</a>
+    <a href="/inport/item/456?tab=summary"><span>Longline Observer Data</span></a>
+    <a href="/inport/item/123">Duplicate Tuna Survey</a>
+  </body>
+</html>
+"""
+
+    hits = parse_inport_search_results(html, keyword="tuna", limit=10)
+
+    assert hits == [
+        {
+            "catalog_item_id": "123",
+            "title": "Yellowfin Tuna Survey",
+            "search_keyword": "tuna",
+            "item_url": "https://www.fisheries.noaa.gov/inport/item/123",
+        },
+        {
+            "catalog_item_id": "456",
+            "title": "Longline Observer Data",
+            "search_keyword": "tuna",
+            "item_url": "https://www.fisheries.noaa.gov/inport/item/456?tab=summary",
+        },
+    ]
+
+
+def test_inport_harvest_catalog_builds_agent_dictionary(monkeypatch) -> None:
+    from connectors import inport
+
+    def fake_search(keyword: str, limit: int) -> list[dict[str, str]]:
+        return [
+            {
+                "catalog_item_id": "123",
+                "title": f"{keyword} title",
+                "search_keyword": keyword,
+                "item_url": "https://www.fisheries.noaa.gov/inport/item/123",
+            }
+        ]
+
+    def fake_inspect(catalog_item_id: str) -> dict:
+        return {
+            "catalog_item_id": catalog_item_id,
+            "title": "NOAA Pelagic Longline Observer Program",
+            "description": "Observer data for pelagic longline fisheries.",
+            "distributions": [
+                {
+                    "url": "https://example.gov/erddap/tabledap/observer.csv",
+                    "classification": "ERDDAP",
+                    "connector": "erddap",
+                }
+            ],
+        }
+
+    monkeypatch.setattr(inport, "search_inport", fake_search)
+    monkeypatch.setattr(inport, "inspect_inport_item", fake_inspect)
+
+    harvest = inport.harvest_inport_catalog(keywords=["tuna", "observer"], per_keyword_limit=2)
+
+    assert harvest["item_count"] == 1
+    assert harvest["catalog"]["123"]["title"] == "NOAA Pelagic Longline Observer Program"
+    assert harvest["catalog"]["123"]["description"] == "Observer data for pelagic longline fisheries."
+    assert harvest["catalog"]["123"]["matched_keywords"] == ["tuna", "observer"]
+    assert harvest["catalog"]["123"]["primary_distribution_url"] == (
+        "https://example.gov/erddap/tabledap/observer.csv"
+    )
+    assert harvest["catalog"]["123"]["distribution_urls"] == [
+        "https://example.gov/erddap/tabledap/observer.csv"
+    ]
+
+
+def test_inport_distribution_endpoint(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "api.main.inspect_inport_item",
+        lambda catalog_item_id: {
+            "source": "inport",
+            "catalog_item_id": str(catalog_item_id),
+            "title": "Example",
+            "distribution_count": 1,
+            "distributions": [
+                {
+                    "url": "https://example.gov/data.csv",
+                    "classification": "CSV Download",
+                    "connector": "csv_download",
+                }
+            ],
+        },
+    )
+
+    response = client.get("/inport/items/123/distributions")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["source"] == "inport"
+    assert body["distributions"][0]["connector"] == "csv_download"
+
+
+def test_inport_harvest_endpoint(monkeypatch) -> None:
+    def fake_harvest(keywords: list[str], per_keyword_limit: int, max_items: int) -> dict:
+        return {
+            "source": "inport",
+            "keywords": keywords,
+            "item_count": 1,
+            "catalog": {
+                "123": {
+                    "catalog_item_id": "123",
+                    "title": "Example",
+                    "description": "Example metadata",
+                    "distribution_urls": ["https://example.gov/data.csv"],
+                }
+            },
+            "errors": [],
+        }
+
+    monkeypatch.setattr("api.main.harvest_inport_catalog", fake_harvest)
+
+    response = client.get(
+        "/inport/harvest",
+        params={"keywords": "tuna, surface temperature", "per_keyword_limit": 2, "max_items": 5},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["keywords"] == ["tuna", "surface temperature"]
+    assert body["catalog"]["123"]["distribution_urls"] == ["https://example.gov/data.csv"]
+
+
+def test_obis_ocean_map_endpoint(monkeypatch) -> None:
+    def fake_ocean_map(
+        scientificname: str,
+        ocean: str | None,
+        size: int,
+        startdate: str | None,
+        enddate: str | None,
+        search_rank: str,
+    ) -> dict:
+        return {
+            "source": "obis",
+            "scientificname": scientificname,
+            "search_rank": search_rank,
+            "ocean": ocean,
+            "search_area": ocean or "All oceans",
+            "total": 10,
+            "returned": 2,
+            "point_count": 1,
+            "date_range": {"start": startdate, "end": enddate},
+            "year_range": {"min": 2020, "max": 2024},
+            "points": [
+                {
+                    "latitude": 12.3,
+                    "longitude": -45.6,
+                    "occurrences": 2,
+                    "radius_m": 100000,
+                    "scientific_name": scientificname,
+                }
+            ],
+        }
+
+    monkeypatch.setattr("api.main.get_species_ocean_map", fake_ocean_map)
+
+    response = client.get(
+        "/obis/ocean-map",
+        params={
+            "species": "yellowfin tuna",
+            "search_rank": "Species",
+            "size": 500,
+            "startdate": "2026-06-03",
+            "enddate": "2026-06-10",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["scientificname"] == "Thunnus albacares"
+    assert body["name_resolved"] is True
+    assert body["common_name"] == "Yellowfin Tuna"
+    assert body["search_rank"] == "Species"
+    assert body["search_area"] == "All oceans"
+    assert body["date_range"] == {"start": "2026-06-03", "end": "2026-06-10"}
+    assert body["points"][0]["occurrences"] == 2
+    assert "Atlantic Ocean" in body["available_oceans"]
+
+
+def test_obis_ocean_map_accepts_family_search(monkeypatch) -> None:
+    def fake_ocean_map(
+        scientificname: str,
+        ocean: str | None,
+        size: int,
+        startdate: str | None,
+        enddate: str | None,
+        search_rank: str,
+    ) -> dict:
+        return {
+            "source": "obis",
+            "scientificname": scientificname,
+            "search_rank": search_rank,
+            "ocean": ocean,
+            "search_area": "All oceans",
+            "total": 4,
+            "returned": 1,
+            "point_count": 1,
+            "date_range": {"start": startdate, "end": enddate},
+            "year_range": {"min": 2025, "max": 2025},
+            "points": [],
+        }
+
+    monkeypatch.setattr("api.main.get_species_ocean_map", fake_ocean_map)
+
+    response = client.get(
+        "/obis/ocean-map",
+        params={
+            "species": "Clupeidae",
+            "search_rank": "Family",
+            "startdate": "2026-06-03",
+            "enddate": "2026-06-10",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["scientificname"] == "Clupeidae"
+    assert body["search_rank"] == "Family"
+    assert body["name_resolved"] is False
+    assert body["common_name"] is None
+
+
 def test_advisor_scores_signals() -> None:
     from agents.orchestrator import build_fishing_advice
     from api.schemas import AdviceRequest
@@ -424,9 +754,12 @@ def test_signal_factors_omitted_without_signals() -> None:
 
 
 def test_resolve_scientific_name() -> None:
-    from agents.signal_collector import resolve_scientific_name
+    from agents.signal_collector import resolve_common_name, resolve_scientific_name
 
     assert resolve_scientific_name("Yellowfin Tuna") == ("Thunnus albacares", True)
     assert resolve_scientific_name("tuna") == ("Thunnus", True)
+    assert resolve_scientific_name("Atlantic Herring") == ("Clupea harengus", True)
+    assert resolve_common_name("Thunnus albacares") == "Yellowfin Tuna"
+    assert resolve_common_name("Clupea harengus") == "Atlantic Herring"
     # Unmapped input falls back to the raw string, flagged unresolved.
     assert resolve_scientific_name("Gadus ogac") == ("Gadus ogac", False)

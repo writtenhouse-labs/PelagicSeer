@@ -52,6 +52,7 @@ COMMON_TO_SCIENTIFIC = {
     "calico bass": "Paralabrax clathratus",
     "kelp bass": "Paralabrax clathratus",
     "cod": "Gadus morhua",
+    "atlantic herring": "Clupea harengus",
 }
 
 # Apparent fishing hours at or above which we treat the area as notably active.
@@ -65,6 +66,17 @@ def resolve_scientific_name(species: str) -> tuple[str, bool]:
     if key in COMMON_TO_SCIENTIFIC:
         return COMMON_TO_SCIENTIFIC[key], True
     return species.strip(), False
+
+
+def resolve_common_name(scientific_name: str) -> str | None:
+    """Map a scientific name back to a display-friendly common name."""
+    normalized_name = scientific_name.strip().lower()
+    matches = [
+        common_name
+        for common_name, mapped_scientific_name in COMMON_TO_SCIENTIFIC.items()
+        if mapped_scientific_name.lower() == normalized_name and common_name != "tuna"
+    ]
+    return max(matches, key=len).title() if matches else None
 
 
 def collect_signals(

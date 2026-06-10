@@ -8,19 +8,35 @@ This is the deterministic first version of the SpeciesContextAgent from
 docs/noaa_data_sources.md: "where has this species been observed near here?"
 """
 
-from typing import Any
 import os
+from typing import Any
 
 import httpx
 
 OBIS_OCCURRENCE_URL = "https://api.obis.org/v3/occurrence"
 HTTP_TIMEOUT_SECONDS = float(os.getenv("PELAGICSEER_HTTP_TIMEOUT_SECONDS", "300"))
 
+OCEAN_BOUNDS = {
+    "Atlantic Ocean": [(-70.0, -80.0, 80.0, 20.0)],
+    "Pacific Ocean": [(-70.0, -180.0, 65.0, -70.0), (-70.0, 120.0, 65.0, 180.0)],
+    "Indian Ocean": [(-60.0, 20.0, 30.0, 120.0)],
+    "Southern Ocean": [(-80.0, -180.0, -60.0, 180.0)],
+    "Arctic Ocean": [(65.0, -180.0, 90.0, 180.0)],
+}
+
 
 def _bbox_wkt(latitude: float, longitude: float, buffer_deg: float) -> str:
     """Build a WKT polygon (lon/lat order) for a square around the point."""
     min_lat, max_lat = latitude - buffer_deg, latitude + buffer_deg
     min_lon, max_lon = longitude - buffer_deg, longitude + buffer_deg
+    return (
+        f"POLYGON (({min_lon} {min_lat}, {max_lon} {min_lat}, "
+        f"{max_lon} {max_lat}, {min_lon} {max_lat}, {min_lon} {min_lat}))"
+    )
+
+
+def _bounds_wkt(min_lat: float, min_lon: float, max_lat: float, max_lon: float) -> str:
+    """Build a WKT polygon from explicit lat/lon bounds."""
     return (
         f"POLYGON (({min_lon} {min_lat}, {max_lon} {min_lat}, "
         f"{max_lon} {max_lat}, {min_lon} {max_lat}, {min_lon} {min_lat}))"
@@ -85,4 +101,83 @@ def get_species_occurrences(
         "depth_range_m": {"min": min(depths), "max": max(depths)} if depths else None,
         "year_range": {"min": min(years), "max": max(years)} if years else None,
         "occurrences": occurrences,
+    }
+
+
+def get_species_ocean_map(
+    scientificname: str,
+    ocean: str | None = None,
+    size: int = 1000,
+    precision: int = 1,
+    startdate: str | None = None,
+    enddate: str | None = None,
+    search_rank: str = "Species",
+) -> dict[str, Any]:
+    """Return OBIS occurrence points aggregated for a named ocean."""
+    if ocean is not None and ocean not in OCEAN_BOUNDS:
+        raise ValueError(f"Unknown ocean '{ocean}'")
+
+    requested_size = max(1, min(size, 5000))
+    all_results: list[dict[str, Any]] = []
+    total = 0
+    search_bounds = {ocean: OCEAN_BOUNDS[ocean]} if ocean else OCEAN_BOUNDS
+
+    with httpx.Client(timeout=HTTP_TIMEOUT_SECONDS) as client:
+        for bounds_list in search_bounds.values():
+            for bounds in bounds_list:
+                params = {
+                    "scientificname": scientificname,
+                    "geometry": _bounds_wkt(*bounds),
+                    "size": requested_size,
+                }
+                if startdate and enddate:
+                    params["startdate"] = startdate
+                    params["enddate"] = enddate
+                response = client.get(OBIS_OCCURRENCE_URL, params=params)
+                response.raise_for_status()
+                payload = response.json()
+                total += payload.get("total", 0)
+                all_results.extend(payload.get("results", []))
+
+    buckets: dict[tuple[float, float], dict[str, Any]] = {}
+    years: list[int] = []
+    for row in all_results:
+        latitude = row.get("decimalLatitude")
+        longitude = row.get("decimalLongitude")
+        if not isinstance(latitude, (int, float)) or not isinstance(longitude, (int, float)):
+            continue
+
+        year = row.get("date_year")
+        if isinstance(year, int):
+            years.append(year)
+
+        key = (round(float(latitude), precision), round(float(longitude), precision))
+        bucket = buckets.setdefault(
+            key,
+            {
+                "latitude": key[0],
+                "longitude": key[1],
+                "occurrences": 0,
+                "scientific_name": row.get("scientificName") or scientificname,
+            },
+        )
+        bucket["occurrences"] += 1
+
+    points = sorted(buckets.values(), key=lambda p: p["occurrences"], reverse=True)
+    max_occurrences = max((point["occurrences"] for point in points), default=0)
+    for point in points:
+        point["radius_m"] = 25000 + (point["occurrences"] / max_occurrences) * 175000 if max_occurrences else 25000
+
+    return {
+        "source": "obis",
+        "scientificname": scientificname,
+        "search_rank": search_rank,
+        "ocean": ocean,
+        "search_area": ocean or "All oceans",
+        "total": total,
+        "returned": len(all_results),
+        "point_count": len(points),
+        "date_range": {"start": startdate, "end": enddate} if startdate and enddate else None,
+        "year_range": {"min": min(years), "max": max(years)} if years else None,
+        "points": points,
     }
