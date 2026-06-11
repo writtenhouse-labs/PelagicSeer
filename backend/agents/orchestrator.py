@@ -246,10 +246,18 @@ def build_fishing_advice(
                 "(historical window)."
             )
         elif plan.mode == "forecast":
-            reasons.append(
-                "Requested window is in the future; conditions are a latest-observation proxy, "
-                "so confidence is capped."
-            )
+            used_forecast = "nws-forecast" in (conditions.get("provenance") or {}).values()
+            if used_forecast:
+                reasons.append(
+                    f"Future window: wind/waves come from the NWS forecast for "
+                    f"{plan.target_date.isoformat()}; SST is the latest-observation proxy. "
+                    "Forecast uncertainty caps confidence."
+                )
+            else:
+                reasons.append(
+                    "Requested window is in the future; conditions are a latest-observation proxy, "
+                    "so confidence is capped."
+                )
             if confidence == "high":
                 confidence = "medium"
 

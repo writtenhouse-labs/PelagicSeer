@@ -24,7 +24,9 @@ from connectors.noaa_coops import (
     get_latest_coops_observation,
 )
 from connectors.noaa_erddap import get_erddap_chlorophyll, get_erddap_sst, get_mock_conditions
+from connectors.noaa_ncei import get_ncei_temperature_anomaly
 from connectors.noaa_ndbc import find_nearest_ndbc_stations, get_latest_ndbc_observation
+from connectors.nws import get_nws_forecast, get_nws_marine_wave
 
 # Canonical fields the fishing advisor scores against.
 CONDITION_FIELDS = (
@@ -169,6 +171,40 @@ def collect_conditions(
     except (httpx.HTTPError, ValueError) as exc:
         sources.append({"id": "noaa-erddap-chla", "status": "error", "detail": str(exc)})
 
+    # Future window: pull the NWS forecast for the target day and record wind
+    # and (coastal) wave height *before* the buoy step so forecast values win
+    # over stale latest observations. SST has no free forecast, so it stays the
+    # ERDDAP latest proxy above. Air temp and the narrative are extra context.
+    forecast_date = plan.target_date if (plan is not None and plan.mode == "forecast") else None
+    if forecast_date is not None:
+        try:
+            forecast = get_nws_forecast(latitude, longitude, target_date=forecast_date)
+            record("wind_speed_kts", forecast.get("wind_speed_kts"), "nws-forecast")
+            if forecast.get("air_temp_f") is not None:
+                conditions["air_temp_f"] = forecast["air_temp_f"]
+                provenance["air_temp_f"] = "nws-forecast"
+            if forecast.get("short_forecast"):
+                conditions["weather_forecast"] = forecast["short_forecast"]
+            sources.append(
+                {
+                    "id": "nws-forecast",
+                    "status": "ok",
+                    "forecast_office": forecast.get("forecast_office"),
+                    "forecast_time": forecast.get("forecast_time"),
+                }
+            )
+        except (httpx.HTTPError, ValueError) as exc:
+            sources.append({"id": "nws-forecast", "status": "error", "detail": str(exc)})
+
+        try:
+            wave = get_nws_marine_wave(latitude, longitude, target_date=forecast_date)
+            record("wave_height_ft", wave.get("wave_height_ft"), "nws-forecast")
+            sources.append(
+                {"id": "nws-forecast-wave", "status": "ok", "valid_time": wave.get("valid_time")}
+            )
+        except (httpx.HTTPError, ValueError) as exc:
+            sources.append({"id": "nws-forecast-wave", "status": "error", "detail": str(exc)})
+
     # Nearest NDBC buoy for waves, wind, pressure, and SST fallback. Some
     # active stations do not expose a realtime2 text feed, so try a few nearby
     # stations before marking the source unavailable.
@@ -270,3 +306,24 @@ def collect_conditions_with_fallback(
             mock["temporal_mode"] = plan.mode
         return mock
     return conditions
+
+
+def collect_climate_anomaly(
+    latitude: float,
+    longitude: float,
+    plan: TemporalPlan | None = None,
+) -> dict[str, Any]:
+    """NCEI temperature anomaly vs. recent local climatology for the window.
+
+    Historical-window context: how the period's temperature compares to the
+    same time of year over the preceding years at the nearest land station.
+    Token-gated (NOAA_NCDC_TOKEN) and makes several CDO calls, so callers should
+    only invoke it off the live/forecast hot path. Degrades to
+    ``{"available": False, ...}`` without a token or data.
+    """
+    target_date = plan.target_date if plan is not None else None
+    try:
+        result = get_ncei_temperature_anomaly(latitude, longitude, target_date=target_date)
+        return {"available": True, **result}
+    except (httpx.HTTPError, ValueError) as exc:
+        return {"available": False, "detail": str(exc)}

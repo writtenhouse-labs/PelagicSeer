@@ -22,8 +22,11 @@ The API will be available at `http://127.0.0.1:8000`.
 ## Endpoints
 
 - `GET /health`
-- `POST /advice` — pulls conditions (ERDDAP satellite SST + chlorophyll, nearest NDBC buoy, nearest CO-OPS currents/water-level/salinity stations), species presence + fishing effort, and a list of species recorded in the area, then scores everything and reports confidence based on how much real data was available. Falls back to mock data only if every source fails. Accepts an optional `start_date`/`end_date` window: when it includes today the collectors run in live mode; a past window queries archives; a future window uses a nowcast proxy and caps confidence.
+- `POST /advice` — pulls conditions (ERDDAP satellite SST + chlorophyll, nearest NDBC buoy, nearest CO-OPS currents/water-level/salinity stations), species presence + fishing effort, a list of species recorded in the area, and DisMAP survey distribution for the target species, then scores everything and reports confidence based on how much real data was available. Falls back to mock data only if every source fails. Accepts an optional `start_date`/`end_date` window: a window including today runs live; a past window queries archives and adds an NCEI climate anomaly; a future window pulls the NWS wind/wave forecast for the window start (SST stays a latest-observation proxy) and caps confidence.
 - `GET /species/in-area?latitude=32.7&longitude=-117.1` — lists the species recorded near a point (OBIS checklist), ranked by record count, optionally restricted with `startdate`/`enddate`.
+- `GET /dismap/distribution?species=lingcod&latitude=47&longitude=-124.5` — NOAA DisMAP survey biomass (WTCPUE) distribution for a species; the covering survey region is inferred from the point (mostly U.S. groundfish surveys, so pelagic targets degrade gracefully).
+- `GET /catalog/registry` — the pinned InPort catalog registry: per-dimension search keywords and curated catalog item IDs (no network).
+- `GET /catalog/discover` — runs the CatalogDiscoveryAgent: harvests InPort per dimension and keeps items exposing an ERDDAP/ArcGIS-REST/THREDDS/API connector. Slow (hits InPort).
 - `GET /noaa/capabilities`
 - `GET /noaa/coops/latest?station=9414290&product=water_level`
 - `GET /noaa/ndbc/latest/{station}`
@@ -33,6 +36,8 @@ The API will be available at `http://127.0.0.1:8000`.
 - `GET /inport/harvest` — searches NOAA InPort for PelagicSeer keywords, inspects each item, and returns an agent-friendly catalog keyed by InPort item ID.
 - `GET /noaa/ncei/datasets` — list NCEI/CDO datasets (handy token check).
 - `GET /noaa/ncei/station-summary?latitude=32.7&longitude=-117.1&days=30` — recent daily summaries from the nearest *active* NCEI station.
+- `GET /noaa/ncei/anomaly?latitude=47&longitude=-124.5` — mean-temperature anomaly for a point/date vs. the same time of year over the preceding years at the nearest GHCND station (token-gated).
+- `GET /nws/forecast?latitude=47&longitude=-124.5` — NWS wind/temperature/narrative forecast for a point, optionally for a `target_date` (U.S. coverage only); the forecast source behind the temporal router's future-window mode.
 
 ## API tokens
 

@@ -17,8 +17,9 @@ Modes
 
 ``target_date`` is the single day a point-conditions *snapshot* should
 represent. Conditions are a snapshot, not an average, so the router picks the
-most decision-relevant day: today for live/forecast, the window end for
-historical (the closest day to now within a past window).
+most decision-relevant day: today for live, the window end for historical (the
+closest day to now within a past window), and the window start for forecast
+(the soonest forecastable day, which the NWS forecast is queried for).
 """
 
 from dataclasses import dataclass, field
@@ -77,10 +78,12 @@ def resolve_temporal_plan(
         )
     else:  # start_date > today
         mode = "forecast"
-        target_date = today
+        # Soonest day of the future window — the most relevant forecastable day
+        # (and the one the NWS forecast is queried for).
+        target_date = start_date
         notes.append(
-            "Window is in the future; no forecast source is wired yet, so conditions use the "
-            "latest observation as a nowcast proxy and confidence is reduced."
+            "Window is in the future; wind/waves come from the NWS forecast for the window start "
+            "while SST stays a latest-observation proxy, and confidence is capped."
         )
 
     return TemporalPlan(
