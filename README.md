@@ -3,10 +3,10 @@
 AI-powered fish intelligence platform.
 
 ## MVP
-- NOAA weather integration
+- NOAA weather integration (InPort, NCEI, GFW, COOPS, ERDAP, NDBC, OBIS)
 - Marine forecast analysis
 - Species reporting
-- Safety scoring
+- Prediction scoring
 
 ## Structure
 - `backend/api` - FastAPI entry point and request schemas
