@@ -162,3 +162,90 @@ def get_ncei_station_summary(
         "record_count": len(observations),
         "observations": observations,
     }
+
+
+def _window_mean_temp_f(
+    station_id: str,
+    center: date,
+    window_days: int,
+    today: date,
+) -> float | None:
+    """Mean daily temperature (F) for a +/- window of days around a date.
+
+    Uses (TMAX + TMIN) / 2, which is far more widely reported at GHCND stations
+    than TAVG. Returns None if the station has no data in the window.
+    """
+    start = center - timedelta(days=window_days)
+    end = min(center + timedelta(days=window_days), today)
+    if start > end:
+        return None
+    payload = _get(
+        "data",
+        {
+            "datasetid": "GHCND",
+            "stationid": station_id,
+            "startdate": start.isoformat(),
+            "enddate": end.isoformat(),
+            "units": "standard",
+            "datatypeid": ["TMAX", "TMIN"],
+            "limit": 1000,
+        },
+    )
+    highs = [r["value"] for r in payload.get("results", []) if r.get("datatype") == "TMAX" and isinstance(r.get("value"), (int, float))]
+    lows = [r["value"] for r in payload.get("results", []) if r.get("datatype") == "TMIN" and isinstance(r.get("value"), (int, float))]
+    if not highs or not lows:
+        return None
+    return (sum(highs) / len(highs) + sum(lows) / len(lows)) / 2
+
+
+def get_ncei_temperature_anomaly(
+    latitude: float,
+    longitude: float,
+    target_date: date | None = None,
+    baseline_years: int = 5,
+    window_days: int = 7,
+    today: date | None = None,
+) -> dict[str, Any]:
+    """Temperature anomaly for a date vs. the same time of year in prior years.
+
+    Compares the mean temperature in a +/- ``window_days`` window around
+    ``target_date`` against the average of that same calendar window over the
+    preceding ``baseline_years`` years, at the nearest GHCND station. A positive
+    anomaly means warmer than the recent local climatology. Raises ValueError
+    without a token, when no station has data, or when the baseline is empty.
+    """
+    today = today or date.today()
+    target = target_date or today
+    earliest = date(target.year - baseline_years, 1, 1)
+    station = find_nearest_ncei_station(
+        latitude, longitude, datasetid="GHCND", active_after=earliest
+    )
+
+    yearly_means: dict[int, float] = {}
+    for year in range(target.year - baseline_years, target.year + 1):
+        center = date(year, target.month, min(target.day, 28))
+        mean_f = _window_mean_temp_f(station["station_id"], center, window_days, today)
+        if mean_f is not None:
+            yearly_means[year] = round(mean_f, 1)
+
+    if target.year not in yearly_means:
+        raise ValueError("NOAA NCEI has no temperature data for the target window")
+    baseline = [mean_f for year, mean_f in yearly_means.items() if year != target.year]
+    if not baseline:
+        raise ValueError("NOAA NCEI has no baseline years with data for the anomaly")
+
+    baseline_mean = sum(baseline) / len(baseline)
+    current_mean = yearly_means[target.year]
+    return {
+        "source": "noaa-ncei",
+        "dataset": "GHCND",
+        "metric": "mean_daily_air_temp_f",
+        "station": station,
+        "target_date": target.isoformat(),
+        "window_days": window_days,
+        "baseline_years": sorted(year for year in yearly_means if year != target.year),
+        "baseline_mean_f": round(baseline_mean, 1),
+        "current_mean_f": current_mean,
+        "anomaly_f": round(current_mean - baseline_mean, 1),
+        "yearly_means_f": yearly_means,
+    }

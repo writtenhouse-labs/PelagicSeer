@@ -17,6 +17,7 @@ from typing import Any
 import httpx
 
 from agents.temporal_router import TemporalPlan
+from connectors.dismap import get_dismap_distribution
 from connectors.gfw import get_fishing_effort
 from connectors.obis import get_area_species, get_species_occurrences
 
@@ -214,6 +215,27 @@ def collect_area_species(
         )
         for entry in result["species"]:
             entry["common_name"] = resolve_common_name(entry["scientific_name"])
+        return {"available": True, **result}
+    except (httpx.HTTPError, ValueError) as exc:
+        return {"available": False, "detail": str(exc)}
+
+
+def collect_survey_distribution(
+    species: str,
+    latitude: float,
+    longitude: float,
+) -> dict[str, Any]:
+    """Gather NOAA survey (DisMAP) distribution for the target species.
+
+    Maps the common name to a scientific name and queries the covering DisMAP
+    survey region for biomass (WTCPUE) samples. Informational context — survey
+    coverage is mostly groundfish/benthic and U.S.-region-limited, so this
+    degrades to ``{"available": False, ...}`` for pelagic targets or locations
+    outside every survey region rather than failing the request.
+    """
+    scientific_name, _ = resolve_scientific_name(species)
+    try:
+        result = get_dismap_distribution(scientific_name, latitude, longitude)
         return {"available": True, **result}
     except (httpx.HTTPError, ValueError) as exc:
         return {"available": False, "detail": str(exc)}

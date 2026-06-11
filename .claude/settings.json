@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(PELAGICSEER_HTTP_TIMEOUT_SECONDS=45 .venv/Scripts/python.exe -)"
+    ]
+  }
+}
