@@ -5,6 +5,9 @@ plus a fishing-activity signal. Given a target species and a lat/lon it asks:
 
 - OBIS: has this species actually been observed near here, and at what depths?
 - GFW: how much commercial fishing effort is here, and is this month in season?
+- FAO FishStat: does this species appear in global production/capture records?
+- Bathymetry: is the point near depth/structure that can concentrate fish?
+- MRIP: is this species/region/month historically plausible for recreational catch?
 
 Like the environment collector, each source is fetched independently and any
 failure (including a missing GFW token) is swallowed per-source, so /advice can
@@ -17,7 +20,10 @@ from typing import Any
 import httpx
 
 from agents.temporal_router import TemporalPlan
+from connectors.bathymetry import get_bathymetry_context
+from connectors.fao import get_fishstat_species_summary
 from connectors.gfw import get_fishing_effort
+from connectors.mrip import get_mrip_recreational_prior
 from connectors.obis import get_area_species, get_species_occurrences
 
 # Curated common-name -> scientific-name map for popular targets. Falls back to
@@ -177,6 +183,55 @@ def collect_signals(
         # ValueError also covers a missing GFW_API_TOKEN.
         sources.append({"id": "global-fishing-watch", "status": "error", "detail": str(exc)})
 
+    fao_fishstat_context: dict[str, Any] = {"available": False}
+    try:
+        fao_fishstat_context = get_fishstat_species_summary(
+            species=species,
+            scientific_name=scientific_name,
+            dataset="global_production",
+        )
+        sources.append(
+            {
+                "id": "fao-fishstat",
+                "status": "ok",
+                "record_count": fao_fishstat_context.get("record_count", 0),
+            }
+        )
+    except (httpx.HTTPError, ValueError) as exc:
+        sources.append({"id": "fao-fishstat", "status": "error", "detail": str(exc)})
+
+    bathymetry_context: dict[str, Any] = {"available": False}
+    try:
+        bathymetry_context = get_bathymetry_context(latitude=latitude, longitude=longitude)
+        sources.append(
+            {
+                "id": "noaa-ncei-etopo",
+                "status": "ok",
+                "depth_m": bathymetry_context.get("depth_m"),
+                "structure": bathymetry_context.get("structure"),
+            }
+        )
+    except (httpx.HTTPError, ValueError) as exc:
+        sources.append({"id": "noaa-ncei-etopo", "status": "error", "detail": str(exc)})
+
+    mrip_recreational_prior: dict[str, Any] = {"available": False}
+    try:
+        mrip_recreational_prior = get_mrip_recreational_prior(
+            species=species,
+            latitude=latitude,
+            longitude=longitude,
+            target_date=today,
+        )
+        sources.append(
+            {
+                "id": "noaa-mrip",
+                "status": "ok" if mrip_recreational_prior.get("available") else "unavailable",
+                "region": (mrip_recreational_prior.get("region") or {}).get("id"),
+            }
+        )
+    except ValueError as exc:
+        sources.append({"id": "noaa-mrip", "status": "error", "detail": str(exc)})
+
     return {
         "species_input": species,
         "scientific_name": scientific_name,
@@ -184,6 +239,9 @@ def collect_signals(
         "species_presence": species_presence,
         "fishing_activity": fishing_activity,
         "target_species_activity": target_species_activity,
+        "fao_fishstat_context": fao_fishstat_context,
+        "bathymetry_context": bathymetry_context,
+        "mrip_recreational_prior": mrip_recreational_prior,
         "sources": sources,
     }
 

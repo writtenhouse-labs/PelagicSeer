@@ -14,8 +14,16 @@ from agents.signal_collector import (
 )
 from agents.temporal_router import resolve_temporal_plan
 from api.schemas import AdviceRequest
+from connectors.bathymetry import get_bathymetry_context
+from connectors.fao import (
+    get_fishstat_dataset_info,
+    get_fishstat_species_summary,
+    list_fishstat_datasets,
+    query_fishstat_data,
+)
 from connectors.gfw import get_fishing_effort
 from connectors.inport import DEFAULT_HARVEST_KEYWORDS, harvest_inport_catalog, inspect_inport_item
+from connectors.mrip import get_mrip_recreational_prior
 from connectors.obis import OCEAN_BOUNDS, get_species_ocean_map, get_species_occurrences
 from connectors.noaa_coops import get_latest_coops_observation
 from connectors.noaa_ncei import get_ncei_datasets, get_ncei_station_summary
@@ -173,6 +181,51 @@ def noaa_capabilities() -> dict:
     }
 
 
+@app.get("/fao/fishstat/datasets")
+def fao_fishstat_datasets() -> dict:
+    return list_fishstat_datasets()
+
+
+@app.get("/fao/fishstat/datasets/{dataset}")
+def fao_fishstat_dataset_info(dataset: str) -> dict:
+    try:
+        return get_fishstat_dataset_info(dataset=dataset)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.get("/fao/fishstat/query")
+def fao_fishstat_query(dataset: str = "global_production", limit: int = 25) -> dict:
+    try:
+        return query_fishstat_data(dataset=dataset, limit=limit)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.get("/fao/fishstat/species-summary")
+def fao_fishstat_species_summary(
+    species: str,
+    scientific_name: str | None = None,
+    dataset: str = "global_production",
+    limit: int = 10,
+) -> dict:
+    try:
+        return get_fishstat_species_summary(
+            species=species,
+            scientific_name=scientific_name,
+            dataset=dataset,
+            limit=limit,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
 @app.get("/noaa/coops/latest")
 def latest_coops_observation(
     station: str,
@@ -202,6 +255,34 @@ def fishing_effort(latitude: float, longitude: float, days: int = 30) -> dict:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except httpx.HTTPError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.get("/bathymetry/context")
+def bathymetry_context(latitude: float, longitude: float) -> dict:
+    try:
+        return get_bathymetry_context(latitude=latitude, longitude=longitude)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.get("/mrip/recreational-prior")
+def mrip_recreational_prior(
+    species: str,
+    latitude: float,
+    longitude: float,
+    target_date: date | None = None,
+) -> dict:
+    try:
+        return get_mrip_recreational_prior(
+            species=species,
+            latitude=latitude,
+            longitude=longitude,
+            target_date=target_date,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.get("/obis/occurrences")

@@ -34,6 +34,9 @@ _NO_SIGNALS = {
     "name_resolved": True,
     "species_presence": {"available": False},
     "fishing_activity": {"available": False},
+    "fao_fishstat_context": {"available": False},
+    "bathymetry_context": {"available": False},
+    "mrip_recreational_prior": {"available": False},
     "sources": [],
 }
 
@@ -176,6 +179,211 @@ def test_noaa_capabilities() -> None:
     }
 
 
+def test_fao_fishstat_lists_configured_datasets() -> None:
+    from connectors.fao import list_fishstat_datasets
+
+    result = list_fishstat_datasets()
+
+    assert result["source"] == "fao-fishstat"
+    dataset_ids = {dataset["id"] for dataset in result["datasets"]}
+    assert dataset_ids >= {"global_production", "capture", "aquaculture"}
+    assert result["datasets"][0]["expected_fields"]
+
+
+def test_fao_fishstat_extracts_collection_metadata() -> None:
+    from connectors.fao import _extract_collection_page_metadata
+
+    html = """
+<html>
+  <head>
+    <link rel="canonical" href="https://www.fao.org/fishery/collection/capture/en">
+    <title>Capture production | FAO</title>
+    <meta name="description" content="Capture statistics by species and area.">
+  </head>
+</html>
+"""
+    fallback = {
+        "name": "Capture Production",
+        "collection_url": "https://www.fao.org/fishery/collection/capture/en",
+        "description": "Fallback description.",
+    }
+
+    metadata = _extract_collection_page_metadata(html, fallback)
+
+    assert metadata["canonical_url"] == "https://www.fao.org/fishery/collection/capture/en"
+    assert metadata["page_title"] == "Capture production | FAO"
+    assert metadata["page_description"] == "Capture statistics by species and area."
+
+
+def test_fao_fishstat_rejects_unknown_dataset() -> None:
+    from connectors.fao import get_fishstat_dataset_info
+
+    try:
+        get_fishstat_dataset_info("not-a-dataset")
+    except ValueError as exc:
+        assert "Unknown FAO FishStat dataset" in str(exc)
+    else:
+        raise AssertionError("expected ValueError")
+
+
+def test_fao_fishstat_datasets_endpoint(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "api.main.list_fishstat_datasets",
+        lambda: {
+            "source": "fao-fishstat",
+            "datasets": [{"id": "capture", "name": "Capture Production"}],
+        },
+    )
+
+    response = client.get("/fao/fishstat/datasets")
+
+    assert response.status_code == 200
+    assert response.json()["datasets"][0]["id"] == "capture"
+
+
+def test_fao_fishstat_dataset_info_endpoint(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "api.main.get_fishstat_dataset_info",
+        lambda dataset: {
+            "source": "fao-fishstat",
+            "dataset": dataset,
+            "collection_url": "https://www.fao.org/fishery/collection/capture/en",
+            "expected_fields": ["species", "year", "value"],
+        },
+    )
+
+    response = client.get("/fao/fishstat/datasets/capture")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["source"] == "fao-fishstat"
+    assert body["dataset"] == "capture"
+    assert body["expected_fields"] == ["species", "year", "value"]
+
+
+def test_fao_fishstat_query_endpoint(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "api.main.query_fishstat_data",
+        lambda dataset, limit: {
+            "source": "fao-fishstat",
+            "dataset": dataset,
+            "response": {"headers": ["year", "value"], "values": [[2024, 12.5]][:limit]},
+        },
+    )
+
+    response = client.get("/fao/fishstat/query", params={"dataset": "capture", "limit": 1})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["dataset"] == "capture"
+    assert body["response"]["values"] == [[2024, 12.5]]
+
+
+def test_fao_fishstat_species_summary_endpoint(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "api.main.get_fishstat_species_summary",
+        lambda species, scientific_name, dataset, limit: {
+            "source": "fao-fishstat",
+            "dataset": dataset,
+            "species_query": species,
+            "scientific_name": scientific_name,
+            "available": True,
+            "record_count": 2,
+            "returned": limit,
+            "year_range": {"min": 2023, "max": 2024},
+            "measures": ["tonnes"],
+            "records": [],
+        },
+    )
+
+    response = client.get(
+        "/fao/fishstat/species-summary",
+        params={
+            "species": "yellowfin tuna",
+            "scientific_name": "Thunnus albacares",
+            "limit": 2,
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["source"] == "fao-fishstat"
+    assert body["species_query"] == "yellowfin tuna"
+    assert body["scientific_name"] == "Thunnus albacares"
+    assert body["year_range"] == {"min": 2023, "max": 2024}
+
+
+def test_fao_fishstat_species_summary_parses_positional_payload(monkeypatch) -> None:
+    from connectors import fao
+
+    monkeypatch.setattr(
+        fao,
+        "query_fishstat_data",
+        lambda **kwargs: {
+            "source": "fao-fishstat",
+            "dataset": kwargs["dataset"],
+            "response": {
+                "headers": ["species", "year", "country", "value", "measure"],
+                "values": [
+                    ["Yellowfin tuna", 2024, "United States of America", 123.4, "tonnes"],
+                    ["Yellowfin tuna", 2023, "Mexico", 50.0, "tonnes"],
+                ],
+            },
+        },
+    )
+
+    summary = fao.get_fishstat_species_summary(
+        species="yellowfin tuna",
+        scientific_name="Thunnus albacares",
+    )
+
+    assert summary["available"] is True
+    assert summary["record_count"] == 2
+    assert summary["year_range"] == {"min": 2023, "max": 2024}
+    assert summary["total_reported_value"] == 173.4
+    assert summary["records"][0]["country"] == "United States of America"
+
+
+def test_fao_fishstat_species_summary_uses_package_fallback_when_table_api_is_unavailable(
+    monkeypatch,
+) -> None:
+    from connectors import fao
+
+    def fake_query(**kwargs):
+        raise ValueError("FAO FishStat table API did not return JSON")
+
+    monkeypatch.setattr(fao, "query_fishstat_data", fake_query)
+    monkeypatch.setattr(
+        fao,
+        "_fishstat_package_species_summary",
+        lambda species, scientific_name, dataset, limit, detail: {
+            "source": "fao-fishstat",
+            "access": "fishstat-r-universe",
+            "dataset": dataset,
+            "species_query": species,
+            "scientific_name": scientific_name,
+            "available": True,
+            "record_count": 1,
+            "returned": 1,
+            "year_range": {"min": 2024, "max": 2024},
+            "total_reported_value": 123.4,
+            "measures": ["t"],
+            "records": [{"species": "Yellowfin tuna", "year": 2024, "value": 123.4}],
+            "detail": detail,
+        },
+    )
+
+    summary = fao.get_fishstat_species_summary(
+        species="yellowfin tuna",
+        scientific_name="Thunnus albacares",
+    )
+
+    assert summary["available"] is True
+    assert summary["access"] == "fishstat-r-universe"
+    assert summary["record_count"] == 1
+    assert "package fallback" in summary["detail"]
+
+
 def test_latest_coops_observation(monkeypatch) -> None:
     def fake_latest_observation(station: str, product: str, units: str) -> dict:
         return {
@@ -313,6 +521,88 @@ def test_gfw_effort_requires_token(monkeypatch) -> None:
     response = client.get("/gfw/effort", params={"latitude": 32.7, "longitude": -117.1})
 
     assert response.status_code == 400
+
+
+def test_bathymetry_context_endpoint(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "api.main.get_bathymetry_context",
+        lambda latitude, longitude: {
+            "source": "noaa-ncei-etopo",
+            "available": True,
+            "latitude": latitude,
+            "longitude": longitude,
+            "depth_ft": 1450.0,
+            "nearby_relief_ft": 300.0,
+            "structure": "strong_depth_break",
+        },
+    )
+
+    response = client.get("/bathymetry/context", params={"latitude": 32.7, "longitude": -117.8})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["source"] == "noaa-ncei-etopo"
+    assert body["structure"] == "strong_depth_break"
+
+
+def test_mrip_recreational_prior_endpoint(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "api.main.get_mrip_recreational_prior",
+        lambda species, latitude, longitude, target_date: {
+            "source": "noaa-mrip",
+            "available": True,
+            "species": species,
+            "region": {"id": "atlantic", "label": "Atlantic coast"},
+            "in_season": True,
+        },
+    )
+
+    response = client.get(
+        "/mrip/recreational-prior",
+        params={"species": "tuna", "latitude": 35.0, "longitude": -75.0, "target_date": "2026-07-01"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["source"] == "noaa-mrip"
+    assert body["region"]["id"] == "atlantic"
+
+
+def test_bathymetry_context_classifies_depth_break(monkeypatch) -> None:
+    from connectors import bathymetry
+
+    samples = {
+        (32.7, -117.8): -400.0,
+        (32.75, -117.8): -650.0,
+        (32.65, -117.8): -380.0,
+        (32.7, -117.75): -390.0,
+        (32.7, -117.85): -700.0,
+    }
+    monkeypatch.setattr(
+        bathymetry,
+        "_sample_elevation",
+        lambda latitude, longitude: samples[(round(latitude, 2), round(longitude, 2))],
+    )
+
+    context = bathymetry.get_bathymetry_context(32.7, -117.8, sample_offset_deg=0.05)
+
+    assert context["available"] is True
+    assert context["depth_m"] == 400.0
+    assert context["nearby_relief_m"] == 320.0
+    assert context["structure"] == "strong_depth_break"
+
+
+def test_mrip_prior_reports_out_of_coverage() -> None:
+    from connectors.mrip import get_mrip_recreational_prior
+
+    prior = get_mrip_recreational_prior(
+        species="yellowfin tuna",
+        latitude=32.7,
+        longitude=-117.1,
+    )
+
+    assert prior["available"] is False
+    assert "outside" in prior["detail"]
 
 
 def test_ncei_station_summary_endpoint(monkeypatch) -> None:
@@ -718,20 +1008,44 @@ def test_advisor_scores_signals() -> None:
             "recent_fishing_hours_nearby": 20.0,
             "gfw_species_specific": False,
         },
+        "fao_fishstat_context": {
+            "available": True,
+            "record_count": 2,
+            "year_range": {"min": 2023, "max": 2024},
+            "measures": ["tonnes"],
+        },
+        "bathymetry_context": {
+            "available": True,
+            "depth_ft": 260.0,
+            "nearby_relief_ft": 450.0,
+            "structure": "strong_depth_break",
+        },
+        "mrip_recreational_prior": {
+            "available": True,
+            "region": {"id": "atlantic", "label": "Atlantic coast"},
+            "in_season": True,
+        },
     }
 
     # No environmental data, so the base score of 50 isolates the signal factors:
     # species present (+10), depth match (+5), recent effort (+8), in season (+5),
-    # and recent effort overlapping known habitat (+7).
+    # recent effort overlapping known habitat (+7), FAO global context (+3),
+    # bathymetry depth/structure (+10), and MRIP seasonality (+4), capped at 100.
     result = build_fishing_advice(request, conditions={}, signals=signals)
 
-    assert result["score"] == 85
+    assert result["score"] == 100
     assert result["label"] == "excellent"
     assert set(result["signals_considered"]["used"]) == {
         "species_presence",
         "fishing_activity",
         "target_species_activity",
+        "fao_fishstat_context",
+        "bathymetry_context",
+        "mrip_recreational_prior",
     }
+    assert any("FAO FishStat" in reason for reason in result["reasons"])
+    assert any("bathymetric relief" in reason for reason in result["reasons"])
+    assert any("MRIP recreational catch" in reason for reason in result["reasons"])
 
 
 def test_collect_signals_combines_gfw_recent_effort_with_species_presence(
@@ -763,6 +1077,35 @@ def test_collect_signals_combines_gfw_recent_effort_with_species_presence(
         }
 
     monkeypatch.setattr(sc, "get_fishing_effort", fake_effort)
+    monkeypatch.setattr(
+        sc,
+        "get_fishstat_species_summary",
+        lambda species, scientific_name, dataset: {
+            "available": True,
+            "record_count": 2,
+            "year_range": {"min": 2023, "max": 2024},
+            "measures": ["tonnes"],
+        },
+    )
+    monkeypatch.setattr(
+        sc,
+        "get_bathymetry_context",
+        lambda latitude, longitude: {
+            "available": True,
+            "depth_ft": 260.0,
+            "nearby_relief_ft": 450.0,
+            "structure": "strong_depth_break",
+        },
+    )
+    monkeypatch.setattr(
+        sc,
+        "get_mrip_recreational_prior",
+        lambda species, latitude, longitude, target_date: {
+            "available": True,
+            "region": {"id": "atlantic", "label": "Atlantic coast"},
+            "in_season": True,
+        },
+    )
 
     signals = sc.collect_signals("tuna", 32.7157, -117.1611, today=date(2026, 6, 8))
 
@@ -770,6 +1113,16 @@ def test_collect_signals_combines_gfw_recent_effort_with_species_presence(
     assert signals["target_species_activity"]["available"] is True
     assert signals["target_species_activity"]["likely_recent_target_activity"] is True
     assert signals["target_species_activity"]["gfw_species_specific"] is False
+    assert signals["fao_fishstat_context"]["available"] is True
+    assert signals["bathymetry_context"]["available"] is True
+    assert signals["mrip_recreational_prior"]["available"] is True
+    assert {source["id"] for source in signals["sources"]} >= {
+        "obis",
+        "global-fishing-watch",
+        "fao-fishstat",
+        "noaa-ncei-etopo",
+        "noaa-mrip",
+    }
 
 
 def test_signal_factors_omitted_without_signals() -> None:

@@ -5,6 +5,8 @@ from pathlib import Path
 import requests
 import streamlit as st
 
+from ui_status import install_swimming_fish_status
+
 
 API_BASE_URL = os.getenv("PELAGICSEER_API_BASE_URL", "http://127.0.0.1:8000")
 API_TIMEOUT_SECONDS = int(os.getenv("PELAGICSEER_API_TIMEOUT_SECONDS", "300"))
@@ -17,6 +19,7 @@ _MODE_HELP = {
 }
 
 st.set_page_config(page_title="PelagicSeer", page_icon=str(ICON_PATH))
+install_swimming_fish_status(ICON_PATH)
 
 _, logo_column, _ = st.columns([1, 1, 1])
 with logo_column:
