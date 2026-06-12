@@ -4,11 +4,13 @@ import httpx
 from fastapi import FastAPI
 from fastapi import HTTPException
 
-from agents.environment_collector import collect_conditions_with_fallback
+from agents.catalog_discovery import discover_catalog
+from agents.environment_collector import collect_climate_anomaly, collect_conditions_with_fallback
 from agents.orchestrator import build_fishing_advice
 from agents.signal_collector import (
     collect_area_species,
     collect_signals,
+    collect_survey_distribution,
     resolve_common_name,
     resolve_scientific_name,
 )
@@ -24,10 +26,19 @@ from connectors.fao import (
 from connectors.gfw import get_fishing_effort
 from connectors.inport import DEFAULT_HARVEST_KEYWORDS, harvest_inport_catalog, inspect_inport_item
 from connectors.mrip import get_mrip_recreational_prior
+from connectors.dismap import get_dismap_distribution
+from connectors.gfw import get_fishing_effort
+from connectors.inport import DEFAULT_HARVEST_KEYWORDS, harvest_inport_catalog, inspect_inport_item
+from connectors.inport_registry import build_registry_payload
 from connectors.obis import OCEAN_BOUNDS, get_species_ocean_map, get_species_occurrences
 from connectors.noaa_coops import get_latest_coops_observation
-from connectors.noaa_ncei import get_ncei_datasets, get_ncei_station_summary
+from connectors.noaa_ncei import (
+    get_ncei_datasets,
+    get_ncei_station_summary,
+    get_ncei_temperature_anomaly,
+)
 from connectors.noaa_ndbc import get_latest_ndbc_observation
+from connectors.nws import get_nws_forecast
 from services.location_resolver import TOO_FAR_MESSAGE, resolve_location
 
 app = FastAPI(title="PelagicSeer API")
@@ -63,6 +74,8 @@ def advice(request: AdviceRequest) -> dict:
             "conditions": {},
             "signals": {},
             "area_species": {"available": False},
+            "survey_distribution": {"available": False},
+            "climate_anomaly": {"available": False},
             "recommendation": {
                 "score": 0,
                 "label": "too_far",
@@ -79,6 +92,14 @@ def advice(request: AdviceRequest) -> dict:
     conditions = collect_conditions_with_fallback(latitude, longitude, plan=plan)
     signals = collect_signals(request.species, latitude, longitude, plan=plan)
     area_species = collect_area_species(latitude, longitude, plan=plan)
+    survey_distribution = collect_survey_distribution(request.species, latitude, longitude)
+    # The climate anomaly is historical-window context and is token-gated +
+    # multi-call, so it is only fetched for past windows (kept off the hot path).
+    climate_anomaly = (
+        collect_climate_anomaly(latitude, longitude, plan=plan)
+        if plan.mode == "historical"
+        else {"available": False}
+    )
     recommendation = build_fishing_advice(request, conditions, signals, plan=plan)
 
     return {
@@ -88,6 +109,8 @@ def advice(request: AdviceRequest) -> dict:
         "conditions": conditions,
         "signals": signals,
         "area_species": area_species,
+        "survey_distribution": survey_distribution,
+        "climate_anomaly": climate_anomaly,
         "recommendation": recommendation,
     }
 
@@ -116,6 +139,86 @@ def species_in_area(
         return collect_area_species(latitude, longitude, plan=plan, buffer_deg=buffer_deg, limit=limit)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/dismap/distribution")
+def dismap_distribution(
+    species: str,
+    latitude: float,
+    longitude: float,
+    region: str | None = None,
+) -> dict:
+    """NOAA DisMAP survey distribution (biomass) for a species near a point.
+
+    The species name is resolved to a scientific name first; the covering
+    survey region is inferred from the point unless ``region`` is given.
+    """
+    try:
+        scientific_name, _ = resolve_scientific_name(species)
+        result = get_dismap_distribution(scientific_name, latitude, longitude, region=region)
+        result["species_input"] = species
+        return result
+    except ValueError as exc:
+        # No covering region or an ArcGIS error.
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.get("/nws/forecast")
+def nws_forecast(
+    latitude: float,
+    longitude: float,
+    target_date: date | None = None,
+) -> dict:
+    """NWS wind/temperature/narrative forecast for a point (U.S. coverage only)."""
+    try:
+        return get_nws_forecast(latitude, longitude, target_date=target_date)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.get("/noaa/ncei/anomaly")
+def ncei_anomaly(
+    latitude: float,
+    longitude: float,
+    target_date: date | None = None,
+    baseline_years: int = 5,
+) -> dict:
+    """Temperature anomaly for a point/date vs. recent local climatology (GHCND)."""
+    try:
+        return get_ncei_temperature_anomaly(
+            latitude, longitude, target_date=target_date, baseline_years=baseline_years
+        )
+    except ValueError as exc:
+        # Missing token or no data both surface as a 400 with the reason.
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.get("/catalog/registry")
+def catalog_registry() -> dict:
+    """Return the pinned InPort catalog registry (no network)."""
+    return build_registry_payload()
+
+
+@app.get("/catalog/discover")
+def catalog_discover(
+    per_keyword_limit: int = 5,
+    max_items_per_dimension: int = 10,
+) -> dict:
+    """Run the CatalogDiscoveryAgent: harvest InPort per dimension and keep
+    items exposing a connector PelagicSeer can consume. Slow (hits InPort)."""
+    try:
+        return discover_catalog(
+            per_keyword_limit=per_keyword_limit,
+            max_items_per_dimension=max_items_per_dimension,
+        )
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
 @app.get("/noaa/capabilities")
@@ -165,6 +268,16 @@ def noaa_capabilities() -> dict:
                     "fish and invertebrate survey distributions",
                     "species distribution indicators",
                     "historical biomass surfaces",
+                ],
+            },
+            {
+                "id": "nws",
+                "name": "NOAA National Weather Service forecast",
+                "best_for": [
+                    "wind forecast",
+                    "coastal wave height forecast",
+                    "air temperature forecast",
+                    "weather narrative for future windows",
                 ],
             },
             {

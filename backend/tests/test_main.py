@@ -65,6 +65,10 @@ def test_advice_returns_live_conditions_and_recommendation(monkeypatch) -> None:
         "api.main.collect_area_species",
         lambda latitude, longitude, plan=None: {"available": False},
     )
+    monkeypatch.setattr(
+        "api.main.collect_survey_distribution",
+        lambda species, latitude, longitude: {"available": False},
+    )
 
     response = client.post(
         "/advice",
@@ -110,6 +114,10 @@ def test_advice_degrades_when_data_is_missing(monkeypatch) -> None:
     monkeypatch.setattr(
         "api.main.collect_area_species",
         lambda latitude, longitude, plan=None: {"available": False},
+    )
+    monkeypatch.setattr(
+        "api.main.collect_survey_distribution",
+        lambda species, latitude, longitude: {"available": False},
     )
 
     response = client.post(
@@ -1156,7 +1164,7 @@ def test_temporal_router_classifies_windows() -> None:
 
     forecast = resolve_temporal_plan(date(2026, 7, 1), date(2026, 7, 5), today=today)
     assert forecast.mode == "forecast"
-    assert forecast.target_date == today
+    assert forecast.target_date == date(2026, 7, 1)  # soonest forecastable day
 
 
 def test_advisor_caps_confidence_for_future_window() -> None:
@@ -1242,3 +1250,393 @@ def test_resolve_scientific_name() -> None:
     assert resolve_common_name("Clupea harengus") == "Atlantic Herring"
     # Unmapped input falls back to the raw string, flagged unresolved.
     assert resolve_scientific_name("Gadus ogac") == ("Gadus ogac", False)
+
+
+def test_arcgis_query_builds_params_and_extracts_features(monkeypatch) -> None:
+    from connectors import arcgis_rest
+
+    captured: dict = {}
+
+    def fake_request_json(url, params):
+        captured["url"] = url
+        captured["params"] = params
+        return {
+            "features": [
+                {"attributes": {"Species": "Sebastes", "WTCPUE": 3.2}, "geometry": {"x": 1, "y": 2}}
+            ],
+            "exceededTransferLimit": False,
+        }
+
+    monkeypatch.setattr(arcgis_rest, "_request_json", fake_request_json)
+
+    result = arcgis_rest.query_arcgis_layer(
+        "https://example.gov/arcgis/rest/services/Demo/FeatureServer/1",
+        where="Species = 'Sebastes'",
+        out_fields="Species,WTCPUE",
+        envelope=(32.0, -118.0, 33.0, -117.0),
+        result_record_count=50,
+        order_by="Year DESC",
+    )
+
+    assert captured["url"].endswith("/FeatureServer/1/query")
+    assert captured["params"]["where"] == "Species = 'Sebastes'"
+    assert captured["params"]["geometryType"] == "esriGeometryEnvelope"
+    assert captured["params"]["resultRecordCount"] == 50
+    assert result["returned"] == 1
+    assert result["features"][0]["attributes"]["WTCPUE"] == 3.2
+    # returnGeometry defaulted to false, so geometry is dropped.
+    assert "geometry" not in result["features"][0]
+
+
+def test_arcgis_query_raises_on_error_payload(monkeypatch) -> None:
+    import pytest
+
+    from connectors import arcgis_rest
+
+    monkeypatch.setattr(
+        arcgis_rest,
+        "_request_json",
+        lambda url, params: (_ for _ in ()).throw(ValueError("ArcGIS REST error: bad where")),
+    )
+    with pytest.raises(ValueError):
+        arcgis_rest.query_arcgis_layer("https://example.gov/x/FeatureServer/0")
+
+
+def test_dismap_region_for_point() -> None:
+    from connectors.dismap import region_for_point
+
+    assert region_for_point(32.7, -117.16)[0] == "WC"  # San Diego
+    assert region_for_point(27.5, -90.0)[0] == "GMEX"  # Gulf of Mexico
+    assert region_for_point(0.0, -30.0) is None  # mid-Atlantic: no survey region
+
+
+def test_dismap_distribution_summarizes(monkeypatch) -> None:
+    from connectors import dismap
+
+    monkeypatch.setattr(
+        dismap,
+        "query_arcgis_layer",
+        lambda layer_url, where, out_fields, result_record_count, order_by: {
+            "returned": 2,
+            "features": [
+                {"attributes": {"CommonName": "Lingcod", "WTCPUE": 4.0, "Year": 2022, "Depth": 80.0, "Latitude": 47.1, "Longitude": -124.5}},
+                {"attributes": {"CommonName": "Lingcod", "WTCPUE": 0.0, "Year": 2020, "Depth": 60.0, "Latitude": 46.9, "Longitude": -124.2}},
+            ],
+        },
+    )
+
+    result = dismap.get_dismap_distribution("Ophiodon elongatus", 47.0, -124.4)
+
+    assert result["region"] == "WC"
+    assert result["common_name"] == "Lingcod"
+    assert result["present_samples"] == 1  # only the WTCPUE>0 sample counts
+    assert result["wtcpue"] == {"min": 4.0, "max": 4.0, "mean": 4.0}
+    assert result["year_range"] == {"min": 2020, "max": 2022}
+
+
+def test_collect_survey_distribution_degrades_outside_region() -> None:
+    from agents.signal_collector import collect_survey_distribution
+
+    # Mid-ocean point is covered by no DisMAP region, so this degrades offline
+    # (region resolution fails before any network call).
+    result = collect_survey_distribution("lingcod", 0.0, -30.0)
+    assert result["available"] is False
+    assert "DisMAP" in result["detail"]
+
+
+def test_catalog_discovery_keeps_only_supported_connectors(monkeypatch) -> None:
+    from agents import catalog_discovery as cd
+
+    def fake_harvest(keywords, per_keyword_limit, max_items):
+        return {
+            "catalog": {
+                "1": {
+                    "catalog_item_id": "1",
+                    "title": "Queryable ERDDAP dataset",
+                    "item_url": "https://inport/item/1",
+                    "matched_keywords": keywords,
+                    "distributions": [
+                        {"url": "https://x/erddap/griddap/d.json", "connector": "erddap", "classification": "ERDDAP"}
+                    ],
+                },
+                "2": {
+                    "catalog_item_id": "2",
+                    "title": "Portal-only item",
+                    "item_url": "https://inport/item/2",
+                    "matched_keywords": keywords,
+                    "distributions": [
+                        {"url": "https://x/landing", "connector": "unknown", "classification": "Unknown"}
+                    ],
+                },
+            },
+            "errors": [],
+        }
+
+    monkeypatch.setattr(cd, "harvest_inport_catalog", fake_harvest)
+
+    result = cd.discover_catalog(
+        dimension_keywords={"sea_surface_temperature": ["sst"]},
+        per_keyword_limit=2,
+        max_items_per_dimension=5,
+    )
+
+    entries = result["catalog"]["sea_surface_temperature"]
+    assert [entry["catalog_item_id"] for entry in entries] == ["1"]
+    assert entries[0]["connectors"] == ["erddap"]
+    assert result["item_count"] == 1
+
+
+def test_catalog_registry_endpoint() -> None:
+    response = client.get("/catalog/registry")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["source"] == "inport-registry"
+    assert "species_distribution" in body["dimension_keywords"]
+    # DisMAP (66799) is pinned under species distribution.
+    ids = {entry["catalog_item_id"] for entry in body["pinned_catalog"]["species_distribution"]}
+    assert "66799" in ids
+
+
+def test_catalog_discover_endpoint(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "api.main.discover_catalog",
+        lambda per_keyword_limit, max_items_per_dimension: {
+            "source": "inport-discovery",
+            "item_count": 1,
+            "catalog": {"species_distribution": [{"catalog_item_id": "66799"}]},
+            "errors": [],
+        },
+    )
+
+    response = client.get("/catalog/discover")
+
+    assert response.status_code == 200
+    assert response.json()["item_count"] == 1
+
+
+def test_dismap_distribution_endpoint(monkeypatch) -> None:
+    def fake_distribution(scientificname, latitude, longitude, region=None) -> dict:
+        return {
+            "source": "noaa-dismap",
+            "scientificname": scientificname,
+            "region": "WC",
+            "present_samples": 5,
+            "points": [],
+        }
+
+    monkeypatch.setattr("api.main.get_dismap_distribution", fake_distribution)
+
+    response = client.get(
+        "/dismap/distribution",
+        params={"species": "lingcod", "latitude": 47.0, "longitude": -124.4},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["source"] == "noaa-dismap"
+    assert body["species_input"] == "lingcod"
+    # Common name resolved to scientific name before querying DisMAP.
+    assert body["scientificname"] == "Ophiodon elongatus"
+
+
+# --- Phase 5: NWS forecast + NCEI anomaly ---------------------------------
+
+_NWS_FORECAST_PAYLOAD = {
+    "properties": {
+        "periods": [
+            {
+                "name": "Today",
+                "startTime": "2026-07-01T06:00:00-07:00",
+                "isDaytime": True,
+                "temperature": 68,
+                "temperatureUnit": "F",
+                "windSpeed": "5 to 10 mph",
+                "windDirection": "NW",
+                "shortForecast": "Sunny",
+            },
+            {
+                "name": "Tonight",
+                "startTime": "2026-07-01T18:00:00-07:00",
+                "isDaytime": False,
+                "temperature": 58,
+                "temperatureUnit": "F",
+                "windSpeed": "5 mph",
+                "windDirection": "W",
+                "shortForecast": "Clear",
+            },
+        ]
+    }
+}
+
+
+def test_nws_forecast_selects_daytime_period(monkeypatch) -> None:
+    from datetime import date
+
+    from connectors import nws
+
+    def fake_get(url, params=None):
+        if url.endswith("/points/47.0000,-124.5000"):
+            return {"properties": {"forecast": "https://api.weather.gov/x/forecast", "gridId": "SEW"}}
+        return _NWS_FORECAST_PAYLOAD
+
+    monkeypatch.setattr(nws, "_get", fake_get)
+
+    result = nws.get_nws_forecast(47.0, -124.5, target_date=date(2026, 7, 1))
+
+    assert result["source"] == "nws-forecast"
+    assert result["forecast_office"] == "SEW"
+    assert result["is_daytime"] is True
+    assert result["air_temp_f"] == 68
+    # "5 to 10 mph" -> high end 10 mph -> ~8.7 kts.
+    assert result["wind_speed_kts"] == 8.7
+    assert result["short_forecast"] == "Sunny"
+
+
+def test_nws_marine_wave_converts_meters(monkeypatch) -> None:
+    from datetime import date
+
+    from connectors import nws
+
+    def fake_get(url, params=None):
+        if "/points/" in url:
+            return {"properties": {
+                "forecast": "https://api.weather.gov/x/forecast",
+                "forecastGridData": "https://api.weather.gov/x/grid",
+            }}
+        return {"properties": {"waveHeight": {"uom": "wmoUnit:m", "values": [
+            {"validTime": "2026-07-01T18:00:00+00:00/PT6H", "value": 1.5},
+        ]}}}
+
+    monkeypatch.setattr(nws, "_get", fake_get)
+
+    result = nws.get_nws_marine_wave(47.0, -124.5, target_date=date(2026, 7, 1))
+    assert result["wave_height_ft"] == 4.9  # 1.5 m
+
+
+def test_nws_raises_outside_coverage(monkeypatch) -> None:
+    import pytest
+
+    from connectors import nws
+
+    monkeypatch.setattr(nws, "_get", lambda url, params=None: {"properties": {}})
+    with pytest.raises(ValueError):
+        nws.get_nws_forecast(0.0, 0.0)
+
+
+def test_collector_uses_nws_forecast_in_forecast_mode(monkeypatch) -> None:
+    from datetime import date
+
+    from agents import environment_collector as ec
+    from agents.temporal_router import resolve_temporal_plan
+
+    monkeypatch.setattr(
+        ec, "get_erddap_sst",
+        lambda latitude, longitude, target_date=None: {"sea_surface_temp_f": 60.0, "dataset": "jplMURSST41"},
+    )
+    monkeypatch.setattr(ec, "get_erddap_chlorophyll", _raise_offline)
+    monkeypatch.setattr(
+        ec, "find_nearest_coops_stations",
+        lambda latitude, longitude, station_type="waterlevels", limit=5: [],
+    )
+    monkeypatch.setattr(ec, "find_nearest_ndbc_stations", _raise_offline)
+    monkeypatch.setattr(
+        ec, "get_nws_forecast",
+        lambda latitude, longitude, target_date=None: {
+            "wind_speed_kts": 12.0,
+            "air_temp_f": 66,
+            "short_forecast": "Breezy",
+            "forecast_office": "SEW",
+            "forecast_time": "2026-07-01T06:00:00-07:00",
+        },
+    )
+    monkeypatch.setattr(
+        ec, "get_nws_marine_wave",
+        lambda latitude, longitude, target_date=None: {"wave_height_ft": 5.2, "valid_time": "x"},
+    )
+
+    plan = resolve_temporal_plan(date(2026, 7, 1), date(2026, 7, 5), today=date(2026, 6, 10))
+    conditions = ec.collect_conditions(47.0, -124.5, plan=plan)
+
+    assert conditions["wind_speed_kts"] == 12.0
+    assert conditions["provenance"]["wind_speed_kts"] == "nws-forecast"
+    assert conditions["wave_height_ft"] == 5.2
+    assert conditions["air_temp_f"] == 66
+    assert conditions["weather_forecast"] == "Breezy"
+
+
+def test_advisor_forecast_note_credits_nws() -> None:
+    from datetime import date
+
+    from agents.orchestrator import build_fishing_advice
+    from agents.temporal_router import resolve_temporal_plan
+    from api.schemas import AdviceRequest
+
+    request = AdviceRequest(city="Westport", state="WA", species="tuna")
+    conditions = dict(_FULL_CONDITIONS)
+    conditions["provenance"] = {"wind_speed_kts": "nws-forecast"}
+    plan = resolve_temporal_plan(date(2026, 7, 1), date(2026, 7, 5), today=date(2026, 6, 10))
+
+    result = build_fishing_advice(request, conditions=conditions, plan=plan)
+
+    assert result["temporal_mode"] == "forecast"
+    assert result["confidence"] == "medium"  # capped for a future window
+    assert any("NWS forecast" in reason for reason in result["reasons"])
+
+
+def test_ncei_temperature_anomaly_computes(monkeypatch) -> None:
+    from datetime import date
+
+    from connectors import noaa_ncei
+
+    def fake_get(path, params):
+        if path == "stations":
+            return {"results": [{
+                "id": "GHCND:TEST", "name": "Test Station",
+                "latitude": 47.0, "longitude": -124.5,
+                "mindate": "2000-01-01", "maxdate": "2026-06-30",
+            }]}
+        # /data: warmer in the current (target) year than the baseline years.
+        warm = params["startdate"].startswith("2026")
+        tmax, tmin = (66, 46) if warm else (60, 40)
+        return {"results": [{"datatype": "TMAX", "value": tmax}, {"datatype": "TMIN", "value": tmin}]}
+
+    monkeypatch.setattr(noaa_ncei, "_get", fake_get)
+    monkeypatch.setenv("NOAA_NCDC_TOKEN", "test-token")
+
+    result = noaa_ncei.get_ncei_temperature_anomaly(
+        47.0, -124.5, target_date=date(2026, 6, 10), baseline_years=3, today=date(2026, 6, 10)
+    )
+
+    assert result["current_mean_f"] == 56.0  # (66+46)/2
+    assert result["baseline_mean_f"] == 50.0  # (60+40)/2
+    assert result["anomaly_f"] == 6.0
+    assert result["baseline_years"] == [2023, 2024, 2025]
+
+
+def test_nws_forecast_endpoint(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "api.main.get_nws_forecast",
+        lambda latitude, longitude, target_date=None: {
+            "source": "nws-forecast", "wind_speed_kts": 9.0, "short_forecast": "Sunny",
+        },
+    )
+
+    response = client.get("/nws/forecast", params={"latitude": 47.0, "longitude": -124.5})
+
+    assert response.status_code == 200
+    assert response.json()["source"] == "nws-forecast"
+
+
+def test_ncei_anomaly_endpoint(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "api.main.get_ncei_temperature_anomaly",
+        lambda latitude, longitude, target_date=None, baseline_years=5: {
+            "source": "noaa-ncei", "anomaly_f": 2.3, "current_mean_f": 60.0, "baseline_mean_f": 57.7,
+        },
+    )
+
+    response = client.get("/noaa/ncei/anomaly", params={"latitude": 47.0, "longitude": -124.5})
+
+    assert response.status_code == 200
+    assert response.json()["anomaly_f"] == 2.3
