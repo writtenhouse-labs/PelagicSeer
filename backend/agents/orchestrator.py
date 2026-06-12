@@ -109,6 +109,80 @@ def _score_signals(
             f"{species_label} has nearby occurrence records, but GFW does not show notable recent fishing effort in this area."
         )
 
+    fao_context = signals.get("fao_fishstat_context", {})
+    if not fao_context.get("available"):
+        missing.append("fao_fishstat_context")
+        reasons.append("FAO FishStat production context was unavailable.")
+    else:
+        used.append("fao_fishstat_context")
+        score += 3
+        record_count = fao_context.get("record_count", 0)
+        year_range = fao_context.get("year_range") or {}
+        measures = fao_context.get("measures") or []
+        year_text = (
+            f" ({year_range['min']}-{year_range['max']})"
+            if year_range.get("min") is not None and year_range.get("max") is not None
+            else ""
+        )
+        measure_text = f" in {', '.join(measures)}" if measures else ""
+        reasons.append(
+            f"FAO FishStat has {record_count} global production/capture record(s) for {species_label}{year_text}{measure_text}; this is broad market context, not local bite activity."
+        )
+
+    bathymetry = signals.get("bathymetry_context", {})
+    if not bathymetry.get("available"):
+        missing.append("bathymetry_context")
+        reasons.append("Bathymetry/structure context was unavailable.")
+    else:
+        used.append("bathymetry_context")
+        depth_ft = bathymetry.get("depth_ft", 0.0)
+        relief_ft = bathymetry.get("nearby_relief_ft", 0.0)
+        structure = bathymetry.get("structure")
+        if request.target_depth_ft:
+            lower = request.target_depth_ft * 0.5
+            upper = request.target_depth_ft * 1.75
+            if lower <= depth_ft <= upper:
+                score += 4
+                reasons.append(
+                    f"Bathymetry depth near this point ({depth_ft:.0f} ft) is close to the requested target depth."
+                )
+            else:
+                score -= 2
+                reasons.append(
+                    f"Bathymetry depth near this point ({depth_ft:.0f} ft) is not close to the requested target depth."
+                )
+        if structure in {"strong_depth_break", "moderate_depth_break"}:
+            score += 6 if structure == "strong_depth_break" else 3
+            reasons.append(
+                f"Nearby bathymetric relief ({relief_ft:.0f} ft) suggests a depth break or structure that can concentrate bait."
+            )
+        elif structure == "land":
+            score -= 8
+            reasons.append("Bathymetry indicates the resolved point is on land rather than fishable water.")
+
+    mrip_prior = signals.get("mrip_recreational_prior", {})
+    if not mrip_prior.get("available"):
+        missing.append("mrip_recreational_prior")
+        reasons.append("MRIP recreational catch prior was unavailable for this location or species.")
+    else:
+        used.append("mrip_recreational_prior")
+        region_label = (mrip_prior.get("region") or {}).get("label", "MRIP region")
+        if mrip_prior.get("in_season") is True:
+            score += 4
+            reasons.append(
+                f"MRIP recreational catch context marks this as an in-season month for {request.species.lower()} in the {region_label}."
+            )
+        elif mrip_prior.get("in_season") is False:
+            score -= 2
+            reasons.append(
+                f"MRIP recreational catch context suggests this is outside the usual seasonal window for {request.species.lower()} in the {region_label}."
+            )
+        else:
+            score += 1
+            reasons.append(
+                f"MRIP coverage exists for the {region_label}, but species-specific seasonality is not mapped yet."
+            )
+
     summary = {
         "used": used,
         "missing": missing,

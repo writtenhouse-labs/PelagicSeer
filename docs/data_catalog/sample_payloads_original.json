@@ -1,0 +1,881 @@
+{
+  "FAO - FishStat placeholder": {
+    "endpoint": "N/A",
+    "example_original_form": {
+      "source": "fao-fishstat",
+      "status": "not_implemented"
+    }
+  },
+  "Global Fishing Watch - 4Wings report": {
+    "endpoint": "https://gateway.api.globalfishingwatch.org/v3/4wings/report?spatial-resolution=LOW&temporal-resolution=MONTHLY&datasets%5B0%5D=public-global-fishing-effort%3Alatest&date-range=2026-05-13%2C2026-06-12&format=JSON&group-by=FLAG",
+    "example_original_form": {
+      "entries": [
+        {
+          "public-global-fishing-effort:v4.0": [
+            {
+              "date": "2026-05",
+              "flag": "USA",
+              "hours": 0.5575,
+              "lat": 32.2,
+              "lon": -117.3,
+              "vesselIDs": 1
+            },
+            {
+              "date": "2026-06",
+              "flag": "USA",
+              "hours": 0.8744444444444446,
+              "lat": 32.4,
+              "lon": -117.3,
+              "vesselIDs": 1
+            },
+            {
+              "date": "2026-06",
+              "flag": "USA",
+              "hours": 0.8675000000000004,
+              "lat": 32.6,
+              "lon": -117.1,
+              "vesselIDs": 1
+            },
+            {
+              "date": "2026-06",
+              "flag": "USA",
+              "hours": 1.6916666666666678,
+              "lat": 32.7,
+              "lon": -117.1,
+              "vesselIDs": 1
+            },
+            {
+              "date": "2026-05",
+              "flag": "USA",
+              "hours": 13.781111111111116,
+              "lat": 32.4,
+              "lon": -117.2,
+              "vesselIDs": 2
+            },
+            {
+              "date": "2026-05",
+              "flag": "USA",
+              "hours": 1.0216666666666667,
+              "lat": 32.4,
+              "lon": -117.6,
+              "vesselIDs": 1
+            },
+            {
+              "date": "2026-06",
+              "flag": "USA",
+              "hours": 1.3247222222222224,
+              "lat": 32.8,
+              "lon": -117.3,
+              "vesselIDs": 1
+            },
+            {
+              "date": "2026-05",
+              "flag": "USA",
+              "hours": 0.5972222222222224,
+              "lat": 33.1,
+              "lon": -117.6,
+              "vesselIDs": 1
+            },
+            {
+              "date": "2026-05",
+              "flag": "USA",
+              "hours": 1.7661111111111114,
+              "lat": 32.5,
+              "lon": -117.3,
+              "vesselIDs": 1
+            },
+            {
+              "date": "2026-05",
+              "flag": "USA",
+              "hours": 3.248611111111111,
+              "lat": 32.3,
+              "lon": -117.2,
+              "vesselIDs": 3
+            },
+            {
+              "date": "2026-05",
+              "flag": "USA",
+              "hours": 5.700555555555557,
+              "lat": 32.5,
+              "lon": -117.2,
+              "vesselIDs": 1
+            },
+            {
+              "date": "2026-05",
+              "flag": "USA",
+              "hours": 31.548333333333336,
+              "lat": 32.7,
+              "lon": -117.2,
+              "vesselIDs": 8
+            },
+            {
+              "date": "2026-05",
+              "flag": "USA",
+              "hours": 4.877777777777779,
+              "lat": 32.6,
+              "lon": -117.2,
+              "vesselIDs": 3
+            },
+            {
+              "date": "2026-05",
+              "flag": "USA",
+              "hours": 0.5008333333333334,
+              "lat": 32.3,
+              "lon": -117.3,
+              "vesselIDs": 1
+            },
+            {
+              "date": "2026-06",
+              "flag": "USA",
+              "hours": 4.653055555555557,
+              "lat": 32.7,
+              "lon": -117.2,
+              "vesselIDs": 1
+            },
+            {
+              "date": "2026-06",
+              "flag": "USA",
+              "hours": 1.4825,
+              "lat": 32.6,
+              "lon": -117.3,
+              "vesselIDs": 1
+            },
+            {
+              "date": "2026-06",
+              "flag": "USA",
+              "hours": 1.5577777777777781,
+              "lat": 32.5,
+              "lon": -117.3,
+              "vesselIDs": 1
+            },
+            {
+              "date": "2026-05",
+              "flag": "USA",
+              "hours": 5.881944444444446,
+              "lat": 32.9,
+              "lon": -117.3,
+              "vesselIDs": 2
+            },
+            {
+              "date": "2026-05",
+              "flag": "USA",
+              "hours": 6.391388888888893,
+              "lat": 32.8,
+              "lon": -117.3,
+              "vesselIDs": 2
+            },
+            {
+              "date": "2026-05",
+              "flag": "USA",
+              "hours": 4.1530555555555555,
+              "lat": 32.2,
+              "lon": -117.4,
+              "vesselIDs": 1
+            },
+            {
+              "date": "2026-05",
+              "flag": "USA",
+              "hours": 6.472500000000002,
+              "lat": 32.6,
+              "lon": -117.1,
+              "vesselIDs": 2
+            },
+            {
+              "date": "2026-05",
+              "flag": "USA",
+              "hours": 6.236666666666668,
+              "lat": 32.5,
+              "lon": -117.1,
+              "vesselIDs": 2
+            },
+            {
+              "date": "2026-06",
+              "flag": "USA",
+              "hours": 1.031388888888889,
+              "lat": 32.4,
+              "lon": -117.2,
+              "vesselIDs": 2
+            },
+            {
+              "date": "2026-06",
+              "flag": "USA",
+              "hours": 0.20833333333333331,
+              "lat": 32.8,
+              "lon": -117.2,
+              "vesselIDs": 1
+            },
+            {
+              "date": "2026-05",
+              "flag": "USA",
+              "hours": 28.522222222222226,
+              "lat": 32.4,
+              "lon": -117.3,
+              "vesselIDs": 3
+            }
+          ]
+        }
+      ],
+      "entries_sample_note": "Original array truncated to 1 of 1 rows.",
+      "limit": null,
+      "metadata": {},
+      "nextOffset": null,
+      "offset": null,
+      "total": 1
+    }
+  },
+  "NOAA CO-OPS - Data Getter water_level latest": {
+    "endpoint": "https://api.tidesandcurrents.noaa.gov/api/prod/datagetter?station=9410170&product=water_level&date=latest&time_zone=gmt&units=english&format=json&application=PelagicSeer&datum=MLLW",
+    "example_original_form": {
+      "data": [
+        {
+          "f": "1,0,0,0",
+          "q": "p",
+          "s": "0.072",
+          "t": "2026-06-12 18:12",
+          "v": "3.086"
+        }
+      ],
+      "data_sample_note": "Original array truncated to 1 of 1 rows.",
+      "metadata": {
+        "id": "9410170",
+        "lat": "32.7156",
+        "lon": "-117.1767",
+        "name": "San Diego"
+      }
+    }
+  },
+  "NOAA CO-OPS - Station Metadata": {
+    "endpoint": "https://api.tidesandcurrents.noaa.gov/mdapi/prod/webapi/stations.json?type=waterlevels",
+    "example_original_form": {
+      "count": 301,
+      "self": null,
+      "stations": [
+        {
+          "HTFhistorical": true,
+          "HTFmonthly": true,
+          "affiliations": "NWLON",
+          "benchmarks": {
+            "self": "https://api.tidesandcurrents.noaa.gov/mdapi/prod/webapi/stations/1611400/benchmarks.json"
+          },
+          "datums": {
+            "self": "https://api.tidesandcurrents.noaa.gov/mdapi/prod/webapi/stations/1611400/datums.json"
+          },
+          "details": {
+            "self": "https://api.tidesandcurrents.noaa.gov/mdapi/prod/webapi/stations/1611400/details.json"
+          },
+          "disclaimers": {
+            "self": "https://api.tidesandcurrents.noaa.gov/mdapi/prod/webapi/stations/1611400/disclaimers.json"
+          },
+          "expand": "details,sensors,floodlevels,datums,harcon,tidepredoffsets,ofsmapoffsets,products,disclaimers,notices",
+          "floodlevels": {
+            "self": "https://api.tidesandcurrents.noaa.gov/mdapi/prod/webapi/stations/1611400/floodlevels.json"
+          },
+          "forecast": false,
+          "greatlakes": false,
+          "harmonicConstituents": {
+            "self": "https://api.tidesandcurrents.noaa.gov/mdapi/prod/webapi/stations/1611400/harcon.json"
+          },
+          "id": "1611400",
+          "inundationdb": true,
+          "lat": 21.9544,
+          "lng": -159.3561,
+          "name": "Nawiliwili",
+          "nearby": {
+            "self": "https://api.tidesandcurrents.noaa.gov/mdapi/prod/webapi/stations/1611400/nearby.json"
+          },
+          "nonNavigational": false,
+          "notices": {
+            "self": "https://api.tidesandcurrents.noaa.gov/mdapi/prod/webapi/stations/1611400/notices.json"
+          },
+          "observedst": false,
+          "ofsMapOffsets": {
+            "self": "https://api.tidesandcurrents.noaa.gov/mdapi/prod/webapi/stations/1611400/ofsmapoffsets.json"
+          },
+          "outlook": true,
+          "portscode": null,
+          "products": {
+            "self": "https://api.tidesandcurrents.noaa.gov/mdapi/prod/webapi/stations/1611400/products.json"
+          },
+          "self": "https://api.tidesandcurrents.noaa.gov/mdapi/prod/webapi/stations/1611400.json",
+          "sensors": {
+            "self": "https://api.tidesandcurrents.noaa.gov/mdapi/prod/webapi/stations/1611400/sensors.json"
+          },
+          "shefcode": "NWWH1",
+          "state": "HI",
+          "stormsurge": false,
+          "supersededdatums": {
+            "self": "https://api.tidesandcurrents.noaa.gov/mdapi/prod/webapi/stations/1611400/supersededdatums.json"
+          },
+          "tidal": true,
+          "tidePredOffsets": {
+            "self": "https://api.tidesandcurrents.noaa.gov/mdapi/prod/webapi/stations/1611400/tidepredoffsets.json"
+          },
+          "tideType": "Mixed",
+          "timezone": "HAST",
+          "timezonecorr": -10
+        },
+        {
+          "HTFhistorical": true,
+          "HTFmonthly": true,
+          "affiliations": "NWLON",
+          "benchmarks": {
+            "self": "https://api.tidesandcurrents.noaa.gov/mdapi/prod/webapi/stations/1612340/benchmarks.json"
+          },
+          "datums": {
+            "self": "https://api.tidesandcurrents.noaa.gov/mdapi/prod/webapi/stations/1612340/datums.json"
+          },
+          "details": {
+            "self": "https://api.tidesandcurrents.noaa.gov/mdapi/prod/webapi/stations/1612340/details.json"
+          },
+          "disclaimers": {
+            "self": "https://api.tidesandcurrents.noaa.gov/mdapi/prod/webapi/stations/1612340/disclaimers.json"
+          },
+          "expand": "details,sensors,floodlevels,datums,harcon,tidepredoffsets,ofsmapoffsets,products,disclaimers,notices",
+          "floodlevels": {
+            "self": "https://api.tidesandcurrents.noaa.gov/mdapi/prod/webapi/stations/1612340/floodlevels.json"
+          },
+          "forecast": false,
+          "greatlakes": false,
+          "harmonicConstituents": {
+            "self": "https://api.tidesandcurrents.noaa.gov/mdapi/prod/webapi/stations/1612340/harcon.json"
+          },
+          "id": "1612340",
+          "inundationdb": true,
+          "lat": 21.303333,
+          "lng": -157.86453,
+          "name": "Honolulu",
+          "nearby": {
+            "self": "https://api.tidesandcurrents.noaa.gov/mdapi/prod/webapi/stations/1612340/nearby.json"
+          },
+          "nonNavigational": false,
+          "notices": {
+            "self": "https://api.tidesandcurrents.noaa.gov/mdapi/prod/webapi/stations/1612340/notices.json"
+          },
+          "observedst": false,
+          "ofsMapOffsets": {
+            "self": "https://api.tidesandcurrents.noaa.gov/mdapi/prod/webapi/stations/1612340/ofsmapoffsets.json"
+          },
+          "outlook": true,
+          "portscode": "ph",
+          "products": {
+            "self": "https://api.tidesandcurrents.noaa.gov/mdapi/prod/webapi/stations/1612340/products.json"
+          },
+          "self": "https://api.tidesandcurrents.noaa.gov/mdapi/prod/webapi/stations/1612340.json",
+          "sensors": {
+            "self": "https://api.tidesandcurrents.noaa.gov/mdapi/prod/webapi/stations/1612340/sensors.json"
+          },
+          "shefcode": "OOUH1",
+          "state": "HI",
+          "stormsurge": false,
+          "supersededdatums": {
+            "self": "https://api.tidesandcurrents.noaa.gov/mdapi/prod/webapi/stations/1612340/supersededdatums.json"
+          },
+          "tidal": true,
+          "tidePredOffsets": {
+            "self": "https://api.tidesandcurrents.noaa.gov/mdapi/prod/webapi/stations/1612340/tidepredoffsets.json"
+          },
+          "tideType": "Mixed",
+          "timezone": "HAST",
+          "timezonecorr": -10
+        },
+        {
+          "HTFhistorical": false,
+          "HTFmonthly": false,
+          "affiliations": "PORTS",
+          "benchmarks": {
+            "self": "https://api.tidesandcurrents.noaa.gov/mdapi/prod/webapi/stations/1612401/benchmarks.json"
+          },
+          "datums": {
+            "self": "https://api.tidesandcurrents.noaa.gov/mdapi/prod/webapi/stations/1612401/datums.json"
+          },
+          "details": {
+            "self": "https://api.tidesandcurrents.noaa.gov/mdapi/prod/webapi/stations/1612401/details.json"
+          },
+          "disclaimers": {
+            "self": "https://api.tidesandcurrents.noaa.gov/mdapi/prod/webapi/stations/1612401/disclaimers.json"
+          },
+          "expand": "details,sensors,floodlevels,datums,harcon,tidepredoffsets,ofsmapoffsets,products,disclaimers,notices",
+          "floodlevels": {
+            "self": "https://api.tidesandcurrents.noaa.gov/mdapi/prod/webapi/stations/1612401/floodlevels.json"
+          },
+          "forecast": false,
+          "greatlakes": false,
+          "harmonicConstituents": {
+            "self": "https://api.tidesandcurrents.noaa.gov/mdapi/prod/webapi/stations/1612401/harcon.json"
+          },
+          "id": "1612401",
+          "inundationdb": true,
+          "lat": 21.3675,
+          "lng": -157.9639,
+          "name": "Pearl Harbor",
+          "nearby": {
+            "self": "https://api.tidesandcurrents.noaa.gov/mdapi/prod/webapi/stations/1612401/nearby.json"
+          },
+          "nonNavigational": false,
+          "notices": {
+            "self": "https://api.tidesandcurrents.noaa.gov/mdapi/prod/webapi/stations/1612401/notices.json"
+          },
+          "observedst": true,
+          "ofsMapOffsets": {
+            "self": "https://api.tidesandcurrents.noaa.gov/mdapi/prod/webapi/stations/1612401/ofsmapoffsets.json"
+          },
+          "outlook": false,
+          "portscode": "ph",
+          "products": {
+            "self": "https://api.tidesandcurrents.noaa.gov/mdapi/prod/webapi/stations/1612401/products.json"
+          },
+          "self": "https://api.tidesandcurrents.noaa.gov/mdapi/prod/webapi/stations/1612401.json",
+          "sensors": {
+            "self": "https://api.tidesandcurrents.noaa.gov/mdapi/prod/webapi/stations/1612401/sensors.json"
+          },
+          "shefcode": "PRHH1",
+          "state": "HI",
+          "stormsurge": false,
+          "supersededdatums": {
+            "self": "https://api.tidesandcurrents.noaa.gov/mdapi/prod/webapi/stations/1612401/supersededdatums.json"
+          },
+          "tidal": true,
+          "tidePredOffsets": {
+            "self": "https://api.tidesandcurrents.noaa.gov/mdapi/prod/webapi/stations/1612401/tidepredoffsets.json"
+          },
+          "tideType": "Mixed",
+          "timezone": "HAST",
+          "timezonecorr": -10
+        }
+      ],
+      "stations_sample_note": "Original array truncated to 3 of 301 rows.",
+      "units": null
+    }
+  },
+  "NOAA ERDDAP - erdMH1chla8day chlorophyll": {
+    "endpoint": "https://coastwatch.pfeg.noaa.gov/erddap/griddap/erdMH1chla8day.json?chlorophyll[(last)][(32.0)][(-118.0)]",
+    "example_original_form": {
+      "table": {
+        "columnNames": [
+          "time",
+          "latitude",
+          "longitude"
+        ],
+        "columnTypes": [
+          "String",
+          "float",
+          "float"
+        ],
+        "columnUnits": [
+          "UTC",
+          "degrees_north",
+          "degrees_east"
+        ],
+        "rows": [
+          [
+            "2022-06-14T00:00:00Z",
+            32.020832,
+            -118.02083
+          ]
+        ]
+      }
+    }
+  },
+  "NOAA ERDDAP - jplMURSST41 analysed_sst": {
+    "endpoint": "https://coastwatch.pfeg.noaa.gov/erddap/griddap/jplMURSST41.json?analysed_sst[(last)][(32.7157)][(-117.1611)]",
+    "example_original_form": {
+      "table": {
+        "columnNames": [
+          "time",
+          "latitude",
+          "longitude"
+        ],
+        "columnTypes": [
+          "String",
+          "float",
+          "float"
+        ],
+        "columnUnits": [
+          "UTC",
+          "degrees_north",
+          "degrees_east"
+        ],
+        "rows": [
+          [
+            "2026-06-11T09:00:00Z",
+            32.72,
+            -117.16
+          ]
+        ]
+      }
+    }
+  },
+  "NOAA InPort - Item XML": {
+    "endpoint": "https://www.fisheries.noaa.gov/inport/item/79931/inport-xml",
+    "example_original_form": {
+      "parsed_metadata": {
+        "catalog_item_id": "79931",
+        "catalog_item_type": "Data Set",
+        "description": "Original Dataset Product:  Classified LAS 1.4 files, formatted to individual 1,000m x 1,000m tiles covering the CA North Sierra 2022 project area.\n\nOriginal Dataset Geographic Extent: \nCA_SierraNevada_1_2022 (Work Unit 300057) - This dataset and derived products encompass an area covering approximately 1204 square miles in the northern region of the project.\nCA_SierraNevada_2_2022 (Work Unit 300058) - This dataset and derived products encompass an area covering approximately 1687 square miles in the northern region of the project.\nCA_SierraNevada_3_2022 (Work Unit 300059) - This dataset and derived products encompass an area covering approximately 1353 square miles in the northern region of the project.\nCA_SierraNevada_4_2022 (Work Unit 300244) - This dataset and derived products encompass an area covering approximately 2688 square miles in the northern region of the project.\nCA_SierraNevada_5_2022 (Work Unit 300245) - This dataset and derived products encompass an area covering approximately 2298 square miles in the central region of the project.\nCA_SierraNevada_6_2022 (Work Unit 300246) - This dataset and derived products encompass an area covering approximately 2136 square miles in the northern region of the project.\nCA_SierraNevada_7_2022 (Work Unit 300271) - This dataset and derived products encompass an area covering approximately 1193 square miles in the northern region of the project.\nCA_SierraNevada_8_2022 (Work Unit 300363) - This dataset and derived products encompass an area covering approximately 2167 square miles in the central region of the project.\nThis area includes the Sierra Nevada Mountains from  the eastern shore of Lake Tahoe west to the ridgeline of the Carson Range, most of the city of South Lake Tahoe and traverses due south to the unincorporated community of Strawberry, then follows the mountain ridge between Tuolumne and Mono counties. It includes the community of Bridgeport and spans east-northeast to the Nevada border. \nCA_SierraNevada_9_2022 (Work Unit 300364) - This dataset and derived products encompass an area covering approximately 2944 square miles in the southern region of the project.\nCA_SierraNevada_10_2022 (Work Unit 300365) - This dataset and derived products encompass an area covering approximately 2593 square miles in the southern region of the project.\nCA_SierraNevada_11_2022 (Work Unit 300459) - This dataset and derived products encompass an area covering approximately 1771 square miles in the central region of the project.\nCA_SierraNevada_12_2022 (Work Unit 300460) - This dataset and derived products encompass an area covering approximately 1410 square miles in the central region of the project.\nCA_SierraNevada_13_2022 (Work Unit 300461) - This dataset and derived products encompass an area covering approximately 3094 square miles in the central region of the project.\nCA_SierraNevada_14_2022 (Work Unit 300462) - This dataset and derived products encompass an area covering approximately 3866 square miles in the southern region of the project.\n\nOriginal Dataset Description:  The CA North Sierra 2022 Lidar project called for the planning, acquisition, and processing of lidar data collected to Quality Level 1 (QL1) Standards. Project specifications are based on the U.S. Geological Survey National Geospatial Program Lidar Base Specification, Version 2022 rev. A. Lidar data was delivered as calibrated and classified LAS 1.4 files. Non-Vegetated Vertical Accuracy (NVA) was assessed using check points located on bare earth in clear, unobstructed areas. Vegetated Vertical Accuracy (VVA) was assessed using check points in the Tall Grass, Forest, and Shrub landcover types. Single swath nominal pulse spacing (NPS) was designed to be 0.35 m at nadir. Aggregate Nominal Pulse Spacing (ANPS) was calculated to be 0.25 m using all valid first return points. Derived products include: Intensity Imagery, Hydro-flattened Bare Earth Digital Elevation Models (DEMs), Highest Hit Digital Surface Models (DSMs), and 3D waters edge breaklines.\n\nOriginal Dataset Ground Conditions: Acquisition occurred free of smoke, fog and cloud cover.\n\nThis metadata record supports the data entry in the NOAA Digital Coast Data Access Viewer (DAV). For this data set, the DAV is leveraging the Entwine Point Tiles (EPT) hosted by USGS on Amazon Web Services.",
+        "distribution_count": 18,
+        "distributions": [
+          {
+            "classification": "Unknown",
+            "connector": "unknown",
+            "description": "The Data Access Viewer (DAV) allows a user to search for and download elevation, imagery, and land cover data for the coastal U.S. and its territories. The data, hosted by the NOAA Office for Coastal Management, can be customized and requested for free download through a checkout interface. An email provides a link to the customized data, while the original data set is available through a link within the viewer.",
+            "name": "NOAA's Office for Coastal Management (OCM) Data Access Viewer (DAV)",
+            "source_section": "urls",
+            "url": "https://coast.noaa.gov/dataviewer/",
+            "url_type": "Online Resource"
+          },
+          {
+            "classification": "Unknown",
+            "connector": "unknown",
+            "description": "Link to the lidar report for CA_SierraNevada_10",
+            "name": "Lidar Report - CA_SierraNevada_10",
+            "source_section": "urls",
+            "url": "https://prd-tnm.s3.amazonaws.com/StagedProducts/Elevation/metadata/CA_SierraNevada_B22/CA_SierraNevada_10_2022/reports/CA_SierraNevada_10_2022_Lidar_Mapping_Report_WU300365_Rev_05212024.pdf",
+            "url_type": "Online Resource"
+          },
+          {
+            "classification": "Unknown",
+            "connector": "unknown",
+            "description": "Link to the lidar report for CA_SierraNevada_11",
+            "name": "Lidar Report - CA_SierraNevada_11",
+            "source_section": "urls",
+            "url": "https://prd-tnm.s3.amazonaws.com/StagedProducts/Elevation/metadata/CA_SierraNevada_B22/CA_SierraNevada_11_B22/reports/140G0222F0176_CA_SierraNevada_2022_WU_300459_WU11_Report_Final_Revised.pdf",
+            "url_type": "Online Resource"
+          }
+        ],
+        "guid": "gov.noaa.nmfs.inport:79931",
+        "owner_organization": "OCM Partners",
+        "source": "inport",
+        "title": "2021 - 2022 UCSD/USGS Lidar: Sierra Nevada, CA"
+      },
+      "xml_excerpt": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<inport-metadata xmlns:xs=\"http://www.w3.org/2001/XMLSchema\"\n                 version=\"1.11\"\n                 source=\"https://www.fisheries.noaa.gov\">\n   <item-identification>\n      <catalog-item-id>79931</catalog-item-id>\n      <title>2021 - 2022 UCSD/USGS Lidar: Sierra Nevada, CA</title>\n      <catalog-item-type>Data Set</catalog-item-type>\n      <metadata-workflow-state ccs-id=\"9\">Published / External</metadata-workflow-state>\n      <parent-catalog-item-id>49401</parent-catalog-item-id>\n      <parent-title>Lidar - partner (no harvest)</parent-title>\n      <parent-catalog-item-type>Project</parent-catalog-item-type>\n      <status>Completed</status>\n      <creation-date>2021</creation-date>\n      <publication-date>2026</publication-date>\n      <abstract>Original Dataset Product:  Classified LAS 1.4 files, formatted to individual 1,000m x 1,000m tiles covering the CA North Sierra 2022 project area.\n\nOriginal Dataset Geographic Extent: \nCA_SierraNevada_1_2022 (Work Unit 300057) - This dataset and derived products encompass an area covering approximately 1204 square miles in the northern region of the project.\nCA_SierraNevada_2_2022 (Work Unit 300058) - This dataset and derived products encompass an area covering approximately 1687 square miles in the northern region of the project.\nCA_SierraNevada_3_2022 (Work Unit 300059) - This dataset and derived products encompass an area covering approximately 1353 square miles in the northern region of the project.\nCA_SierraNevada_4_2022 (Work Unit 300244) - This dataset and derived products encompass an area covering approximately 2688 square miles in the northern region of the project.\nCA_SierraNevada_5_2022 (Work Unit 300245) - This dataset and derived products encompass an area covering approximately 2298 square miles in the central region of the project.\nCA_SierraNevada_6_2022 (Work Unit 300246) - This dataset and derived products encompass an area covering approximately 2136 square miles in the northern region of the project.\nCA_SierraNevada_7_2022 (Work Unit 300271) - This dataset and derived products encompass an area covering approximately 1193 square miles in the northern region of the project.\nCA_SierraNevada_8_2022 (Work Unit 300363) - This dataset and derived products encompass an area covering approximately 2167 square miles in the central region of the project.\nThis area includes the Sierra Nevada Mountains from  the eastern shore of Lake Tahoe west to the ridgeline of the Carson Range, most of the city of South Lake Tahoe and traverses due south to the unincorporated community of Strawberry, then follows the mountain ridge between Tuolumne and Mono counties. It includes the community of Bridgeport and spans east-northeast to the Nevada border. \nCA_SierraNevada_9_2022 (Work Unit 300364) - This dataset and derived products encompass an area covering approximately 2944 square miles in the southern region of the project.\nCA_SierraNevada_10_2022 (Work Unit 30"
+    }
+  },
+  "NOAA NCEI/CDO - datasets": {
+    "endpoint": "https://www.ncdc.noaa.gov/cdo-web/api/v2/datasets?limit=3",
+    "example_original_form": {
+      "metadata": {
+        "resultset": {
+          "count": 11,
+          "limit": 3,
+          "offset": 1
+        }
+      },
+      "results": [
+        {
+          "datacoverage": 1,
+          "id": "GHCND",
+          "maxdate": "2026-06-09",
+          "mindate": "1763-01-01",
+          "name": "Daily Summaries",
+          "uid": "gov.noaa.ncdc:C00861"
+        },
+        {
+          "datacoverage": 1,
+          "id": "GSOM",
+          "maxdate": "2026-06-01",
+          "mindate": "1763-01-01",
+          "name": "Global Summary of the Month",
+          "uid": "gov.noaa.ncdc:C00946"
+        },
+        {
+          "datacoverage": 1,
+          "id": "GSOY",
+          "maxdate": "2026-01-01",
+          "mindate": "1763-01-01",
+          "name": "Global Summary of the Year",
+          "uid": "gov.noaa.ncdc:C00947"
+        }
+      ],
+      "results_sample_note": "Original array truncated to 3 of 3 rows."
+    }
+  },
+  "NOAA NDBC - Active Stations": {
+    "endpoint": "https://www.ndbc.noaa.gov/activestations.xml",
+    "example_original_form": {
+      "parsed_station_sample": [
+        {
+          "latitude": 12.0,
+          "longitude": -23.0,
+          "name": "NE Extension",
+          "station": "13001",
+          "type": "buoy"
+        },
+        {
+          "latitude": 21.0,
+          "longitude": -23.0,
+          "name": "NE Extension",
+          "station": "13002",
+          "type": "buoy"
+        },
+        {
+          "latitude": 15.0,
+          "longitude": -38.0,
+          "name": "Reggae",
+          "station": "13008",
+          "type": "buoy"
+        }
+      ],
+      "xml_excerpt": "<?xml version=\"1.0\" encoding=\"utf-8\"?><stations created=\"2026-06-12T18:10:04UTC\" count=\"1355\">\n  <!--Site Elevation (elev attribute), when present, is reported in meters above mean sea level.-->\n  <station id=\"13001\" lat=\"12\" lon=\"-23\" elev=\"0\" name=\"NE Extension\" owner=\"Prediction and Research Moored Array in the Atlantic\" pgm=\"International Partners\" type=\"buoy\" met=\"n\" currents=\"n\" waterquality=\"n\" dart=\"n\"/>\n  <station id=\"13002\" lat=\"21\" lon=\"-23\" elev=\"0\" name=\"NE Extension\" owner=\"Prediction and Research Moored Array in the Atlantic\" pgm=\"International Partners\" type=\"buoy\" met=\"y\" currents=\"n\" waterquality=\"n\" dart=\"n\"/>\n  <station id=\"13008\" lat=\"15\" lon=\"-38\" elev=\"0\" name=\"Reggae\" owner=\"Prediction and Research Moored Array in the Atlantic\" pgm=\"International Partners\" type=\"buoy\" met=\"y\" currents=\"n\" waterquality=\"n\" dart=\"n\"/>\n  <station id=\"13009\" lat=\"8\" lon=\"-38\" elev=\"0\" name=\"Lambada\" owner=\"Prediction and Research Moored Array in the Atlantic\" pgm=\"International Partners\" type=\"buoy\" met=\"n\" currents=\"n\" waterquality=\"n\" dart=\"n\"/>\n  <station id=\"14041\" lat=\"-8\" lon=\"55\" elev=\"0\" name=\"\" owner=\"Research Moored Array for African-Asian-Australian Monsoon Analysis and Prediction\" pgm=\"International Partners\" type=\"buoy\" met=\"n\" currents=\"n\" waterquality=\"n\" dart=\"n\"/>\n  <station id=\"14047\" lat=\"-4\" lon=\"57\" elev=\"0\" name=\"\" owner=\"Research Moored Array for African-Asian-Australian Monsoon Analysis and Prediction\" pgm=\"International Partners\" type=\"buoy\" met=\"n\" currents=\"n\" waterquality=\"n\" dart=\"n\"/>\n  <station id=\"14048\" lat=\"-8\" lon=\"65\" elev=\"0\" name=\"\" owner=\"Research Moored Array for African-Asian-Australian Monsoon Analysis and Prediction\" pgm=\"International Partners\" type=\"buoy\" met=\"n\" currents=\"n\" waterquality=\"n\" dart=\"n\"/>\n  <station id=\"14049\" lat=\"-12\" lon=\"65\" elev=\"0\" name=\"\" owner=\"Research Moored Array for African-Asian-Australian Monsoon Analysis and Prediction\" pgm=\"International Partners\" type=\"buoy\" met=\"y\" currents=\"n\" waterquality=\"n\" dart=\"n\"/>\n  <station id=\"15001\" lat=\"-10\" lon=\"-10\" elev=\"0\" name=\"Gavotte\" owner=\"Prediction and Research Moored Array in the Atlantic\" pgm=\"International Partners\" type=\"buoy\" met=\"y\" currents=\"n\" waterquality=\"n\" dart=\"n\"/>\n  <station id=\"15002\" lat=\"0\" lon=\"-10\" elev=\"0\" name=\"Java\" owner=\"Prediction and Research Moored Array in the Atlantic\" pgm=\"International Partners\" type=\"buoy\" met=\"y\" currents=\"n\" waterquality=\"n\" dart=\"n\"/>\n  <station id=\"15006\" lat=\"-6\" lon=\"-10\" elev=\"0\" name=\"Valse\" owner=\"Prediction and Research Moored Array in the Atlantic\" pgm=\"International Partners\" type=\"buoy\" met=\"y\" currents=\"n\" waterquality=\"n\" dart=\"n\"/>\n  <station id=\"15008\" lat=\"-20\" lon=\"-10\" elev=\"0\" name=\"\" owner=\"Prediction and Research Moored Array in the Atlantic\" pgm=\"International Partners\" type=\"other\" met=\"n\" currents=\"n\" waterquality=\"n\" dart=\"n\"/>\n  <station id=\"15009\" lat=\"0\" lon=\"-3.051\" elev=\"0\" name=\"\" owner=\"Prediction and Research Moored Array in the Atlantic\" pgm=\""
+    }
+  },
+  "NOAA NDBC - realtime2 observation": {
+    "endpoint": "https://www.ndbc.noaa.gov/data/realtime2/46086.txt",
+    "example_original_form": {
+      "header": [
+        "YY",
+        "MM",
+        "DD",
+        "hh",
+        "mm",
+        "WDIR",
+        "WSPD",
+        "GST",
+        "WVHT",
+        "DPD",
+        "APD",
+        "MWD",
+        "PRES",
+        "ATMP",
+        "WTMP",
+        "DEWP",
+        "VIS",
+        "PTDY",
+        "TIDE"
+      ],
+      "rows": [
+        {
+          "APD": "MM",
+          "ATMP": "17.8",
+          "DD": "12",
+          "DEWP": "17.2",
+          "DPD": "MM",
+          "GST": "6.0",
+          "MM": "06",
+          "MWD": "MM",
+          "PRES": "1011.9",
+          "PTDY": "MM",
+          "TIDE": "MM",
+          "VIS": "MM",
+          "WDIR": "330",
+          "WSPD": "5.0",
+          "WTMP": "19.7",
+          "WVHT": "MM",
+          "YY": "2026",
+          "hh": "17",
+          "mm": "40"
+        },
+        {
+          "APD": "MM",
+          "ATMP": "17.8",
+          "DD": "12",
+          "DEWP": "17.1",
+          "DPD": "MM",
+          "GST": "6.0",
+          "MM": "06",
+          "MWD": "MM",
+          "PRES": "1011.8",
+          "PTDY": "MM",
+          "TIDE": "MM",
+          "VIS": "MM",
+          "WDIR": "320",
+          "WSPD": "5.0",
+          "WTMP": "19.7",
+          "WVHT": "MM",
+          "YY": "2026",
+          "hh": "17",
+          "mm": "30"
+        },
+        {
+          "APD": "8.9",
+          "ATMP": "17.7",
+          "DD": "12",
+          "DEWP": "17.0",
+          "DPD": "15",
+          "GST": "5.0",
+          "MM": "06",
+          "MWD": "184",
+          "PRES": "1012.0",
+          "PTDY": "MM",
+          "TIDE": "MM",
+          "VIS": "MM",
+          "WDIR": "320",
+          "WSPD": "4.0",
+          "WTMP": "19.7",
+          "WVHT": "1.4",
+          "YY": "2026",
+          "hh": "17",
+          "mm": "20"
+        }
+      ],
+      "text_excerpt": "#YY  MM DD hh mm WDIR WSPD GST  WVHT   DPD   APD MWD   PRES  ATMP  WTMP  DEWP  VIS PTDY  TIDE\n#yr  mo dy hr mn degT m/s  m/s     m   sec   sec degT   hPa  degC  degC  degC  nmi  hPa    ft\n2026 06 12 17 40 330  5.0  6.0    MM    MM    MM  MM 1011.9  17.8  19.7  17.2   MM   MM    MM\n2026 06 12 17 30 320  5.0  6.0    MM    MM    MM  MM 1011.8  17.8  19.7  17.1   MM   MM    MM\n2026 06 12 17 20 320  4.0  5.0   1.4    15   8.9 184 1012.0  17.7  19.7  17.0   MM   MM    MM",
+      "units": [
+        "yr",
+        "mo",
+        "dy",
+        "hr",
+        "mn",
+        "degT",
+        "m/s",
+        "m/s",
+        "m",
+        "sec",
+        "sec",
+        "degT",
+        "hPa",
+        "degC",
+        "degC",
+        "degC",
+        "nmi",
+        "hPa",
+        "ft"
+      ]
+    }
+  },
+  "OBIS - Checklist": {
+    "endpoint": "https://api.obis.org/v3/checklist?geometry=POLYGON+%28%28-119.1611+30.7157%2C+-115.1611+30.7157%2C+-115.1611+34.7157%2C+-119.1611+34.7157%2C+-119.1611+30.7157%29%29",
+    "example_original_form": {
+      "results": [
+        {
+          "acceptedNameUsage": "Macrocystis pyrifera",
+          "acceptedNameUsageID": 232231,
+          "class": "Phaeophyceae",
+          "classid": 830,
+          "family": "Laminariaceae",
+          "familyid": 143755,
+          "genus": "Macrocystis",
+          "genusid": 206527,
+          "infrakingdom": "Heterokonta",
+          "infrakingdomid": 368898,
+          "is_marine": true,
+          "kingdom": "Chromista",
+          "kingdomid": 7,
+          "ncbi_id": 35122,
+          "order": "Laminariales",
+          "orderid": 845,
+          "phylum": "Ochrophyta",
+          "phylumid": 345465,
+          "records": 246059,
+          "scientificName": "Macrocystis pyrifera",
+          "scientificNameAuthorship": "(Linnaeus) C.Agardh, 1820",
+          "species": "Macrocystis pyrifera",
+          "speciesid": 232231,
+          "subclass": "Fucophycidae",
+          "subclassid": 1304856,
+          "subkingdom": "Harosa",
+          "subkingdomid": 582419,
+          "taxonID": 232231,
+          "taxonRank": "Species",
+          "taxonomicStatus": "accepted"
+        },
+        {
+          "acceptedNameUsage": "Megastraea undosa",
+          "acceptedNameUsageID": 528084,
+          "class": "Gastropoda",
+          "classid": 101,
+          "family": "Turbinidae",
+          "familyid": 503,
+          "genus": "Megastraea",
+          "genusid": 528082,
+          "is_marine": true,
+          "kingdom": "Animalia",
+          "kingdomid": 2,
+          "ncbi_id": 529768,
+          "order": "Trochida",
+          "orderid": 1052448,
+          "phylum": "Mollusca",
+          "phylumid": 51,
+          "records": 34882,
+          "scientificName": "Megastraea undosa",
+          "scientificNameAuthorship": "(W. Wood, 1828)",
+          "species": "Megastraea undosa",
+          "speciesid": 528084,
+          "subclass": "Vetigastropoda",
+          "subclassid": 156485,
+          "subfamily": "Turbininae",
+          "subfamilyid": 225151,
+          "superfamily": "Trochoidea",
+          "superfamilyid": 156489,
+          "taxonID": 528084,
+          "taxonRank": "Species",
+          "taxonomicStatus": "accepted"
+        },
+        {
+          "acceptedNameUsage": "Mesocentrotus franciscanus",
+          "acceptedNameUsageID": 591102,
+          "class": "Echinoidea",
+          "classid": 123082,
+          "family": "Strongylocentrotidae",
+          "familyid": 123161,
+          "genus": "Mesocentrotus",
+          "genusid": 591101,
+          "infraclass": "Carinacea",
+          "infraclassid": 510517,
+          "infraorder": "Echinidea",
+          "infraorderid": 510534,
+          "is_brackish": false,
+          "is_freshwater": false,
+          "is_marine": true,
+          "is_terrestrial": false,
+          "kingdom": "Animalia",
+          "kingdomid": 2,
+          "ncbi_id": 1328066,
+          "order": "Camarodonta",
+          "orderid": 510518,
+          "phylum": "Echinodermata",
+          "phylumid": 1806,
+          "records": 34087,
+          "scientificName": "Mesocentrotus franciscanus",
+          "scientificNameAuthorship": "(A. Agassiz, 1863)",
+          "species": "Mesocentrotus franciscanus",
+          "speciesid": 591102,
+          "subclass": "Euechinoidea",
+          "subclassid": 149854,
+          "subphylum": "Echinozoa",
+          "subphylumid": 148744,
+          "subterclass": "Echinacea",
+          "subterclassid": 149855,
+          "superfamily": "Odontophora",
+          "superfamilyid": 510604,
+          "taxonID": 591102,
+          "taxonRank": "Species",
+          "taxonomicStatus": "accepted"
+        }
+      ],
+      "results_sample_note": "Original array truncated to 3 of 10 rows.",
+      "total": 9066
+    }
+  },
+  "OBIS - Occurrence": {
+    "endpoint": "https://api.obis.org/v3/occurrence?scientificname=Thunnus+albacares&geometry=POLYGON+%28%28-119.1611+30.7157%2C+-115.1611+30.7157%2C+-115.1611+34.7157%2C+-119.1611+34.7157%2C+-119.1611+30.7157%29%29&size=3",
+    "example_original_form": {
+      "results": [],
+      "results_sample_note": "Original array truncated to 0 of 0 rows.",
+      "total": 0
+    }
+  },
+  "OpenStreetMap - Nominatim Search": {
+    "endpoint": "https://nominatim.openstreetmap.org/search?city=San+Diego&state=CA&country=USA&format=jsonv2&limit=1",
+    "example_original_form": [
+      {
+        "addresstype": "city",
+        "boundingbox": [
+          "32.5347979",
+          "33.1141940",
+          "-117.3098161"
+        ],
+        "category": "boundary",
+        "display_name": "San Diego, San Diego County, California, United States",
+        "importance": 0.731977951818745,
+        "lat": "32.7174202",
+        "licence": "Data \u00a9 OpenStreetMap contributors, ODbL 1.0. http://osm.org/copyright",
+        "lon": "-117.1627720",
+        "name": "San Diego",
+        "osm_id": 253832,
+        "osm_type": "relation",
+        "place_id": 317794838,
+        "place_rank": 16,
+        "type": "administrative"
+      }
+    ]
+  }
+}
