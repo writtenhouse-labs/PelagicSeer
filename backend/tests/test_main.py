@@ -1,3 +1,5 @@
+import httpx
+
 from fastapi.testclient import TestClient
 
 from api.main import app
@@ -390,6 +392,36 @@ def test_fao_fishstat_species_summary_uses_package_fallback_when_table_api_is_un
     assert summary["access"] == "fishstat-r-universe"
     assert summary["record_count"] == 1
     assert "package fallback" in summary["detail"]
+
+
+def test_fao_fishstat_species_summary_degrades_when_all_sources_are_unavailable(
+    monkeypatch,
+) -> None:
+    from connectors import fao
+
+    def fake_query(**kwargs):
+        raise ValueError("FAO FishStat table API did not return JSON")
+
+    def fake_fallback(**kwargs):
+        raise httpx.HTTPStatusError(
+            "401 Unauthorized",
+            request=httpx.Request("GET", "https://example.test/species/json"),
+            response=httpx.Response(401),
+        )
+
+    monkeypatch.setattr(fao, "query_fishstat_data", fake_query)
+    monkeypatch.setattr(fao, "_fishstat_package_species_summary", fake_fallback)
+
+    summary = fao.get_fishstat_species_summary(
+        species="yellowfin tuna",
+        scientific_name="Thunnus albacares",
+    )
+
+    assert summary["available"] is False
+    assert summary["record_count"] == 0
+    assert summary["records"] == []
+    assert "Table API error" in summary["detail"]
+    assert "Package fallback error" in summary["detail"]
 
 
 def test_latest_coops_observation(monkeypatch) -> None:

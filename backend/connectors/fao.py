@@ -520,6 +520,30 @@ def _fishstat_package_species_summary(
     }
 
 
+def _unavailable_species_summary(
+    species: str,
+    scientific_name: str | None,
+    dataset: str,
+    detail: str,
+) -> dict[str, Any]:
+    return {
+        "source": "fao-fishstat",
+        "dataset": dataset,
+        "species_query": species,
+        "scientific_name": scientific_name,
+        "available": False,
+        "record_count": 0,
+        "returned": 0,
+        "year_range": None,
+        "total_reported_value": None,
+        "measures": [],
+        "records": [],
+        "matched_species": [],
+        "detail": detail,
+        "notes": "FAO FishStat is global production/capture context, not local catch or live fishing conditions.",
+    }
+
+
 def get_fishstat_species_summary(
     species: str,
     scientific_name: str | None = None,
@@ -551,13 +575,26 @@ def get_fishstat_species_summary(
             limit=limit,
         )
     except (httpx.HTTPError, ValueError) as exc:
-        return _fishstat_package_species_summary(
-            species=species,
-            scientific_name=scientific_name,
-            dataset=dataset,
-            limit=limit,
-            detail="Used FishStat package fallback because FAO's web table endpoint was unavailable.",
-        )
+        table_error = exc
+        try:
+            return _fishstat_package_species_summary(
+                species=species,
+                scientific_name=scientific_name,
+                dataset=dataset,
+                limit=limit,
+                detail="Used FishStat package fallback because FAO's web table endpoint was unavailable.",
+            )
+        except (httpx.HTTPError, ValueError) as fallback_exc:
+            return _unavailable_species_summary(
+                species=species,
+                scientific_name=scientific_name,
+                dataset=dataset,
+                detail=(
+                    "FAO FishStat context is currently unavailable. "
+                    f"Table API error: {table_error}. "
+                    f"Package fallback error: {fallback_exc}."
+                ),
+            )
 
     payload = result.get("response", {})
     records = _records_from_payload(payload)
@@ -605,3 +642,4 @@ def get_fishstat_species_summary(
         "records": summarized_records,
         "notes": "FAO FishStat is global production/capture context, not local catch or live fishing conditions.",
     }
+

@@ -11,8 +11,10 @@ import streamlit as st
 from ui_status import install_swimming_fish_status
 
 
-API_BASE_URL = os.getenv("PELAGICSEER_API_BASE_URL", "http://127.0.0.1:8000")
-API_TIMEOUT_SECONDS = int(os.getenv("PELAGICSEER_API_TIMEOUT_SECONDS", "300"))
+DEFAULT_API_BASE_URL = "https://pelagicseer-api-542566523617.us-central1.run.app"
+API_BASE_URL = os.getenv("PELAGICSEER_API_BASE_URL", DEFAULT_API_BASE_URL).rstrip("/")
+API_TIMEOUT_SECONDS = int(os.getenv("PELAGICSEER_API_TIMEOUT_SECONDS", "90"))
+FAO_TIMEOUT_SECONDS = int(os.getenv("PELAGICSEER_FAO_TIMEOUT_SECONDS", "8"))
 ASSET_PATH = Path(__file__).resolve().parents[1] / "assets" / "YellowfinTuna.png"
 
 WORLD_VIEW_STATE = {"latitude": 12.0, "longitude": -20.0, "zoom": 0.75}
@@ -42,6 +44,7 @@ with controls[3]:
 with controls[4]:
     sample_size = st.number_input("Record sample", min_value=100, max_value=5000, value=1000, step=100)
 
+include_fao = st.checkbox("Include FAO FishStat context", value=False)
 submitted = st.button("Search data banks", type="primary")
 
 if submitted:
@@ -52,47 +55,53 @@ if submitted:
         fao_body = None
         fao_error = None
         try:
-            response = requests.get(
-                f"{API_BASE_URL}/obis/ocean-map",
-                params={
-                    "species": species,
-                    "search_rank": search_rank,
-                    "size": sample_size,
-                    "startdate": startdate.isoformat(),
-                    "enddate": enddate.isoformat(),
-                },
-                timeout=API_TIMEOUT_SECONDS,
-            )
+            with st.spinner("Searching live data banks..."):
+                response = requests.get(
+                    f"{API_BASE_URL}/obis/ocean-map",
+                    params={
+                        "species": species,
+                        "search_rank": search_rank,
+                        "size": sample_size,
+                        "startdate": startdate.isoformat(),
+                        "enddate": enddate.isoformat(),
+                    },
+                    timeout=API_TIMEOUT_SECONDS,
+                )
             response.raise_for_status()
             map_body = response.json()
         except requests.RequestException as exc:
             st.error(f"Could not search the data banks: {exc}")
-        if map_body is not None:
+            st.caption(f"API endpoint: {API_BASE_URL}")
+        if map_body is not None and include_fao:
             try:
-                fao_response = requests.get(
-                    f"{API_BASE_URL}/fao/fishstat/species-summary",
-                    params={
-                        "species": species,
-                        "scientific_name": map_body.get("scientificname"),
-                        "dataset": "global_production",
-                        "limit": 10,
-                    },
-                    timeout=API_TIMEOUT_SECONDS,
-                )
+                with st.spinner("Checking FAO FishStat context..."):
+                    fao_response = requests.get(
+                        f"{API_BASE_URL}/fao/fishstat/species-summary",
+                        params={
+                            "species": species,
+                            "scientific_name": map_body.get("scientificname"),
+                            "dataset": "global_production",
+                            "limit": 10,
+                        },
+                        timeout=FAO_TIMEOUT_SECONDS,
+                    )
                 fao_response.raise_for_status()
                 fao_body = fao_response.json()
             except requests.RequestException as exc:
                 fao_error = str(exc)
 
+        if map_body is not None:
             st.session_state["source_bank_map_result"] = map_body
             st.session_state["source_bank_fao_result"] = fao_body
             st.session_state["source_bank_fao_error"] = fao_error
+            st.session_state["source_bank_include_fao"] = include_fao
             st.session_state["source_bank_map_query"] = {
                 "search_rank": search_rank,
                 "species": species,
                 "sample_size": sample_size,
                 "startdate": startdate,
                 "enddate": enddate,
+                "include_fao": include_fao,
             }
 
 body = st.session_state.get("source_bank_map_result")
@@ -105,9 +114,10 @@ current_query = {
     "sample_size": sample_size,
     "startdate": startdate,
     "enddate": enddate,
+    "include_fao": include_fao,
 }
 
-if body and query == current_query:
+if body:
     points = body.get("points", [])
     display_name = body.get("common_name") or body.get("scientificname")
     if body.get("search_rank") in {"Genus", "Family"}:
@@ -194,6 +204,8 @@ if body and query == current_query:
             )
         elif fao_error:
             st.info(f"FAO FishStat context was unavailable: {fao_error}")
+        elif not st.session_state.get("source_bank_include_fao"):
+            st.info("Run the search with FAO FishStat context enabled to load global production/capture rows.")
         else:
             detail = fao_result.get("detail") if fao_result else None
             message = "No FAO FishStat production/capture rows were returned for this query."
@@ -201,5 +213,3 @@ if body and query == current_query:
                 message = f"FAO FishStat context was unavailable: {detail}"
             st.info(message)
 
-elif body:
-    st.info("Search the source banks again to refresh the map for the selected species, dates, or sample size.")
