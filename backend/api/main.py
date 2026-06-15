@@ -39,6 +39,7 @@ from connectors.noaa_ncei import (
 )
 from connectors.noaa_ndbc import get_latest_ndbc_observation
 from connectors.nws import get_nws_forecast
+from services.integration_logging import integration_span
 from services.location_resolver import TOO_FAR_MESSAGE, resolve_location
 
 app = FastAPI(title="PelagicSeer API")
@@ -101,75 +102,178 @@ def health() -> dict[str, str]:
 
 @app.post("/advice")
 def advice(request: AdviceRequest) -> dict:
-    try:
-        location = resolve_location(request.city, request.state)
-    except (httpx.HTTPError, ValueError) as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    with integration_span(
+        "pelagicseer-api",
+        "advice_request",
+        city=request.city,
+        state=request.state,
+        species=request.species,
+        start_date=request.start_date,
+        end_date=request.end_date,
+    ) as request_span:
+        try:
+            with integration_span(
+                "pelagicseer-api",
+                "resolve_location",
+                city=request.city,
+                state=request.state,
+            ) as span:
+                location = resolve_location(request.city, request.state)
+                span.add(
+                    latitude=location.get("latitude"),
+                    longitude=location.get("longitude"),
+                    too_far_from_ocean=location.get("too_far_from_ocean"),
+                    ocean_distance_miles=location.get("ocean_distance_miles"),
+                )
+        except (httpx.HTTPError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    latitude = location["latitude"]
-    longitude = location["longitude"]
+        latitude = location["latitude"]
+        longitude = location["longitude"]
 
-    today = date.today()
-    plan = resolve_temporal_plan(
-        request.start_date or today,
-        request.end_date or today,
-        today=today,
-    )
+        today = date.today()
+        plan = resolve_temporal_plan(
+            request.start_date or today,
+            request.end_date or today,
+            today=today,
+        )
+        request_span.add(plan_mode=plan.mode)
 
-    if location["too_far_from_ocean"]:
+        if location["too_far_from_ocean"]:
+            request_span.add(result="too_far_from_ocean")
+            return {
+                "location": location,
+                "species": request.species,
+                "date_range": plan.as_dict(),
+                "conditions": {},
+                "signals": {},
+                "area_species": {"available": False},
+                "survey_distribution": {"available": False},
+                "climate_anomaly": {"available": False},
+                "recommendation": {
+                    "score": 0,
+                    "label": "too_far",
+                    "summary": TOO_FAR_MESSAGE,
+                    "reasons": [
+                        f"{request.city}, {request.state} is about "
+                        f"{location['ocean_distance_miles']} miles from the nearest ocean station."
+                    ],
+                    "confidence": "high",
+                    "data_completeness": {"available": [], "missing": []},
+                },
+            }
+
+        with integration_span(
+            "pelagicseer-api",
+            "collect_conditions",
+            latitude=latitude,
+            longitude=longitude,
+            plan_mode=plan.mode,
+        ) as span:
+            conditions = collect_conditions_with_fallback(latitude, longitude, plan=plan)
+            condition_sources = conditions.get("sources", [])
+            span.add(
+                available=bool(conditions),
+                sources_returned=len(condition_sources) if isinstance(condition_sources, list) else None,
+            )
+
+        analysis_location = _analysis_location_from_conditions(location, conditions)
+        analysis_latitude = analysis_location["latitude"]
+        analysis_longitude = analysis_location["longitude"]
+        request_span.add(
+            analysis_source=analysis_location.get("source"),
+            analysis_station=analysis_location.get("station"),
+            analysis_latitude=analysis_latitude,
+            analysis_longitude=analysis_longitude,
+        )
+
+        with integration_span(
+            "pelagicseer-api",
+            "collect_signals",
+            species=request.species,
+            latitude=analysis_latitude,
+            longitude=analysis_longitude,
+            plan_mode=plan.mode,
+        ) as span:
+            signals = collect_signals(request.species, analysis_latitude, analysis_longitude, plan=plan)
+            signal_sources = signals.get("sources", [])
+            span.add(
+                available=bool(signals),
+                sources_returned=len(signal_sources) if isinstance(signal_sources, list) else None,
+            )
+
+        with integration_span(
+            "pelagicseer-api",
+            "collect_area_species",
+            latitude=analysis_latitude,
+            longitude=analysis_longitude,
+            plan_mode=plan.mode,
+        ) as span:
+            area_species = collect_area_species(analysis_latitude, analysis_longitude, plan=plan)
+            span.add(
+                available=area_species.get("available"),
+                records_returned=len(area_species.get("species", [])),
+                total=area_species.get("total"),
+            )
+
+        with integration_span(
+            "pelagicseer-api",
+            "collect_survey_distribution",
+            species=request.species,
+            latitude=analysis_latitude,
+            longitude=analysis_longitude,
+        ) as span:
+            survey_distribution = collect_survey_distribution(
+                request.species, analysis_latitude, analysis_longitude
+            )
+            span.add(
+                available=survey_distribution.get("available"),
+                records_returned=len(survey_distribution.get("samples", [])),
+            )
+
+        # The climate anomaly is historical-window context and is token-gated +
+        # multi-call, so it is only fetched for past windows (kept off the hot path).
+        if plan.mode == "historical":
+            with integration_span(
+                "pelagicseer-api",
+                "collect_climate_anomaly",
+                latitude=analysis_latitude,
+                longitude=analysis_longitude,
+                plan_mode=plan.mode,
+            ) as span:
+                climate_anomaly = collect_climate_anomaly(
+                    analysis_latitude, analysis_longitude, plan=plan
+                )
+                span.add(available=climate_anomaly.get("available"))
+        else:
+            climate_anomaly = {"available": False}
+
+        with integration_span(
+            "pelagicseer-api",
+            "build_recommendation",
+            species=request.species,
+            plan_mode=plan.mode,
+        ) as span:
+            recommendation = build_fishing_advice(request, conditions, signals, plan=plan)
+            span.add(
+                score=recommendation.get("score"),
+                label=recommendation.get("label"),
+                confidence=recommendation.get("confidence"),
+            )
+
+        request_span.add(result="ok")
         return {
             "location": location,
+            "analysis_location": analysis_location,
             "species": request.species,
             "date_range": plan.as_dict(),
-            "conditions": {},
-            "signals": {},
-            "area_species": {"available": False},
-            "survey_distribution": {"available": False},
-            "climate_anomaly": {"available": False},
-            "recommendation": {
-                "score": 0,
-                "label": "too_far",
-                "summary": TOO_FAR_MESSAGE,
-                "reasons": [
-                    f"{request.city}, {request.state} is about "
-                    f"{location['ocean_distance_miles']} miles from the nearest ocean station."
-                ],
-                "confidence": "high",
-                "data_completeness": {"available": [], "missing": []},
-            },
+            "conditions": conditions,
+            "signals": signals,
+            "area_species": area_species,
+            "survey_distribution": survey_distribution,
+            "climate_anomaly": climate_anomaly,
+            "recommendation": recommendation,
         }
-
-    conditions = collect_conditions_with_fallback(latitude, longitude, plan=plan)
-    analysis_location = _analysis_location_from_conditions(location, conditions)
-    analysis_latitude = analysis_location["latitude"]
-    analysis_longitude = analysis_location["longitude"]
-
-    signals = collect_signals(request.species, analysis_latitude, analysis_longitude, plan=plan)
-    area_species = collect_area_species(analysis_latitude, analysis_longitude, plan=plan)
-    survey_distribution = collect_survey_distribution(
-        request.species, analysis_latitude, analysis_longitude
-    )
-    # The climate anomaly is historical-window context and is token-gated +
-    # multi-call, so it is only fetched for past windows (kept off the hot path).
-    climate_anomaly = (
-        collect_climate_anomaly(analysis_latitude, analysis_longitude, plan=plan)
-        if plan.mode == "historical"
-        else {"available": False}
-    )
-    recommendation = build_fishing_advice(request, conditions, signals, plan=plan)
-
-    return {
-        "location": location,
-        "analysis_location": analysis_location,
-        "species": request.species,
-        "date_range": plan.as_dict(),
-        "conditions": conditions,
-        "signals": signals,
-        "area_species": area_species,
-        "survey_distribution": survey_distribution,
-        "climate_anomaly": climate_anomaly,
-        "recommendation": recommendation,
-    }
 
 
 @app.get("/species/in-area")
@@ -212,7 +316,19 @@ def dismap_distribution(
     """
     try:
         scientific_name, _ = resolve_scientific_name(species)
-        result = get_dismap_distribution(scientific_name, latitude, longitude, region=region)
+        with integration_span(
+            "noaa-dismap",
+            "distribution_endpoint",
+            scientific_name=scientific_name,
+            latitude=latitude,
+            longitude=longitude,
+            region=region,
+        ) as span:
+            result = get_dismap_distribution(scientific_name, latitude, longitude, region=region)
+            span.add(
+                available=result.get("available"),
+                records_returned=len(result.get("samples", [])),
+            )
         result["species_input"] = species
         return result
     except ValueError as exc:
@@ -230,7 +346,27 @@ def nws_forecast(
 ) -> dict:
     """NWS wind/temperature/narrative forecast for a point (U.S. coverage only)."""
     try:
-        return get_nws_forecast(latitude, longitude, target_date=target_date)
+        with integration_span(
+            "nws",
+            "forecast_endpoint",
+            latitude=latitude,
+            longitude=longitude,
+            target_date=target_date,
+        ) as span:
+            result = get_nws_forecast(latitude, longitude, target_date=target_date)
+            span.add(
+                forecast_office=result.get("forecast_office"),
+                forecast_time=result.get("forecast_time"),
+                fields_returned=sum(
+                    value is not None
+                    for value in (
+                        result.get("wind_speed_kts"),
+                        result.get("air_temp_f"),
+                        result.get("short_forecast"),
+                    )
+                ),
+            )
+            return result
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except httpx.HTTPError as exc:
@@ -246,9 +382,19 @@ def ncei_anomaly(
 ) -> dict:
     """Temperature anomaly for a point/date vs. recent local climatology (GHCND)."""
     try:
-        return get_ncei_temperature_anomaly(
-            latitude, longitude, target_date=target_date, baseline_years=baseline_years
-        )
+        with integration_span(
+            "noaa-ncei",
+            "temperature_anomaly_endpoint",
+            latitude=latitude,
+            longitude=longitude,
+            target_date=target_date,
+            baseline_years=baseline_years,
+        ) as span:
+            result = get_ncei_temperature_anomaly(
+                latitude, longitude, target_date=target_date, baseline_years=baseline_years
+            )
+            span.add(records_returned=len(result.get("daily_values", [])))
+            return result
     except ValueError as exc:
         # Missing token or no data both surface as a 400 with the reason.
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -270,10 +416,18 @@ def catalog_discover(
     """Run the CatalogDiscoveryAgent: harvest InPort per dimension and keep
     items exposing a connector PelagicSeer can consume. Slow (hits InPort)."""
     try:
-        return discover_catalog(
+        with integration_span(
+            "noaa-inport",
+            "catalog_discover",
             per_keyword_limit=per_keyword_limit,
             max_items_per_dimension=max_items_per_dimension,
-        )
+        ) as span:
+            result = discover_catalog(
+                per_keyword_limit=per_keyword_limit,
+                max_items_per_dimension=max_items_per_dimension,
+            )
+            span.add(records_returned=len(result.get("items", [])))
+            return result
     except httpx.HTTPError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
@@ -359,7 +513,10 @@ def fao_fishstat_datasets() -> dict:
 @app.get("/fao/fishstat/datasets/{dataset}")
 def fao_fishstat_dataset_info(dataset: str) -> dict:
     try:
-        return get_fishstat_dataset_info(dataset=dataset)
+        with integration_span("fao-fishstat", "dataset_info_endpoint", dataset=dataset) as span:
+            result = get_fishstat_dataset_info(dataset=dataset)
+            span.add(available=True, resolved_url=result.get("resolved_url"))
+            return result
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except httpx.HTTPError as exc:
@@ -369,7 +526,11 @@ def fao_fishstat_dataset_info(dataset: str) -> dict:
 @app.get("/fao/fishstat/query")
 def fao_fishstat_query(dataset: str = "global_production", limit: int = 25) -> dict:
     try:
-        return query_fishstat_data(dataset=dataset, limit=limit)
+        with integration_span("fao-fishstat", "query_endpoint", dataset=dataset, limit=limit) as span:
+            result = query_fishstat_data(dataset=dataset, limit=limit)
+            values = (result.get("response") or {}).get("values", [])
+            span.add(records_returned=len(values) if isinstance(values, list) else None)
+            return result
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except httpx.HTTPError as exc:
@@ -384,12 +545,28 @@ def fao_fishstat_species_summary(
     limit: int = 10,
 ) -> dict:
     try:
-        return get_fishstat_species_summary(
+        with integration_span(
+            "fao-fishstat",
+            "species_summary_endpoint",
             species=species,
             scientific_name=scientific_name,
             dataset=dataset,
             limit=limit,
-        )
+        ) as span:
+            result = get_fishstat_species_summary(
+                species=species,
+                scientific_name=scientific_name,
+                dataset=dataset,
+                limit=limit,
+            )
+            span.add(
+                available=result.get("available"),
+                record_count=result.get("record_count"),
+                records_returned=result.get("returned"),
+                map_points=len(result.get("map_points", [])),
+                access=result.get("access"),
+            )
+            return result
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except httpx.HTTPError as exc:
@@ -403,7 +580,17 @@ def latest_coops_observation(
     units: str = "english",
 ) -> dict:
     try:
-        return get_latest_coops_observation(station=station, product=product, units=units)
+        with integration_span(
+            "noaa-coops",
+            "latest_observation_endpoint",
+            station=station,
+            product=product,
+            units=units,
+        ) as span:
+            result = get_latest_coops_observation(station=station, product=product, units=units)
+            observation = result.get("observation", {})
+            span.add(fields_returned=len(observation) if isinstance(observation, dict) else None)
+            return result
     except (httpx.HTTPError, ValueError) as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
@@ -411,7 +598,11 @@ def latest_coops_observation(
 @app.get("/noaa/ndbc/latest/{station}")
 def latest_ndbc_observation(station: str) -> dict:
     try:
-        return get_latest_ndbc_observation(station=station)
+        with integration_span("noaa-ndbc", "latest_observation_endpoint", station=station) as span:
+            result = get_latest_ndbc_observation(station=station)
+            observation = result.get("observation", {})
+            span.add(fields_returned=len(observation) if isinstance(observation, dict) else None)
+            return result
     except (httpx.HTTPError, ValueError) as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
@@ -419,7 +610,16 @@ def latest_ndbc_observation(station: str) -> dict:
 @app.get("/gfw/effort")
 def fishing_effort(latitude: float, longitude: float, days: int = 30) -> dict:
     try:
-        return get_fishing_effort(latitude=latitude, longitude=longitude, days=days)
+        with integration_span(
+            "global-fishing-watch",
+            "effort_endpoint",
+            latitude=latitude,
+            longitude=longitude,
+            days=days,
+        ) as span:
+            result = get_fishing_effort(latitude=latitude, longitude=longitude, days=days)
+            span.add(total_hours=result.get("total_apparent_fishing_hours"))
+            return result
     except ValueError as exc:
         # Missing token or no coverage for the requested box/window.
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -430,7 +630,19 @@ def fishing_effort(latitude: float, longitude: float, days: int = 30) -> dict:
 @app.get("/bathymetry/context")
 def bathymetry_context(latitude: float, longitude: float) -> dict:
     try:
-        return get_bathymetry_context(latitude=latitude, longitude=longitude)
+        with integration_span(
+            "noaa-ncei-etopo",
+            "bathymetry_context_endpoint",
+            latitude=latitude,
+            longitude=longitude,
+        ) as span:
+            result = get_bathymetry_context(latitude=latitude, longitude=longitude)
+            span.add(
+                available=result.get("available"),
+                depth_m=result.get("depth_m"),
+                structure=result.get("structure"),
+            )
+            return result
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except httpx.HTTPError as exc:
@@ -445,12 +657,25 @@ def mrip_recreational_prior(
     target_date: date | None = None,
 ) -> dict:
     try:
-        return get_mrip_recreational_prior(
+        with integration_span(
+            "noaa-mrip",
+            "recreational_prior_endpoint",
             species=species,
             latitude=latitude,
             longitude=longitude,
             target_date=target_date,
-        )
+        ) as span:
+            result = get_mrip_recreational_prior(
+                species=species,
+                latitude=latitude,
+                longitude=longitude,
+                target_date=target_date,
+            )
+            span.add(
+                available=result.get("available"),
+                region=(result.get("region") or {}).get("id"),
+            )
+            return result
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -463,12 +688,22 @@ def obis_occurrences(
     buffer_deg: float = 1.0,
 ) -> dict:
     try:
-        return get_species_occurrences(
-            scientificname=scientificname,
+        with integration_span(
+            "obis",
+            "occurrences_endpoint",
+            scientific_name=scientificname,
             latitude=latitude,
             longitude=longitude,
             buffer_deg=buffer_deg,
-        )
+        ) as span:
+            result = get_species_occurrences(
+                scientificname=scientificname,
+                latitude=latitude,
+                longitude=longitude,
+                buffer_deg=buffer_deg,
+            )
+            span.add(total=result.get("total"), records_returned=result.get("returned"))
+            return result
     except (httpx.HTTPError, ValueError) as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
@@ -495,14 +730,26 @@ def obis_ocean_map(
             raise ValueError("startdate and enddate must be provided together")
         if startdate and enddate and startdate > enddate:
             raise ValueError("startdate cannot be after enddate")
-        result = get_species_ocean_map(
-            scientificname=scientific_name,
+        with integration_span(
+            "obis",
+            "ocean_map_endpoint",
+            scientific_name=scientific_name,
             ocean=ocean,
             size=size,
-            startdate=startdate.isoformat() if startdate else None,
-            enddate=enddate.isoformat() if enddate else None,
+            startdate=startdate,
+            enddate=enddate,
             search_rank=normalized_rank,
-        )
+        ) as span:
+            result = get_species_ocean_map(
+                scientificname=scientific_name,
+                ocean=ocean,
+                size=size,
+                startdate=startdate.isoformat() if startdate else None,
+                enddate=enddate.isoformat() if enddate else None,
+                search_rank=normalized_rank,
+            )
+            points = result.get("points", [])
+            span.add(records_returned=len(points) if isinstance(points, list) else None)
         result["species_input"] = species
         result["name_resolved"] = name_resolved
         result["common_name"] = (
@@ -519,7 +766,11 @@ def obis_ocean_map(
 @app.get("/noaa/ncei/datasets")
 def ncei_datasets(limit: int = 25) -> dict:
     try:
-        return get_ncei_datasets(limit=limit)
+        with integration_span("noaa-ncei", "datasets_endpoint", limit=limit) as span:
+            result = get_ncei_datasets(limit=limit)
+            datasets = result.get("datasets", [])
+            span.add(records_returned=len(datasets) if isinstance(datasets, list) else None)
+            return result
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except httpx.HTTPError as exc:
@@ -529,7 +780,15 @@ def ncei_datasets(limit: int = 25) -> dict:
 @app.get("/inport/items/{catalog_item_id}/distributions")
 def inport_item_distributions(catalog_item_id: int) -> dict:
     try:
-        return inspect_inport_item(catalog_item_id)
+        with integration_span(
+            "noaa-inport",
+            "item_distributions_endpoint",
+            catalog_item_id=catalog_item_id,
+        ) as span:
+            result = inspect_inport_item(catalog_item_id)
+            distributions = result.get("distributions", [])
+            span.add(records_returned=len(distributions) if isinstance(distributions, list) else None)
+            return result
     except httpx.HTTPError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     except ValueError as exc:
@@ -548,11 +807,21 @@ def inport_harvest(
             if keywords
             else list(DEFAULT_HARVEST_KEYWORDS)
         )
-        return harvest_inport_catalog(
-            keywords=keyword_list,
+        with integration_span(
+            "noaa-inport",
+            "harvest_endpoint",
+            keywords=",".join(keyword_list),
             per_keyword_limit=per_keyword_limit,
             max_items=max_items,
-        )
+        ) as span:
+            result = harvest_inport_catalog(
+                keywords=keyword_list,
+                per_keyword_limit=per_keyword_limit,
+                max_items=max_items,
+            )
+            items = result.get("items", [])
+            span.add(records_returned=len(items) if isinstance(items, list) else None)
+            return result
     except httpx.HTTPError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     except ValueError as exc:
@@ -562,7 +831,17 @@ def inport_harvest(
 @app.get("/noaa/ncei/station-summary")
 def ncei_station_summary(latitude: float, longitude: float, days: int = 30) -> dict:
     try:
-        return get_ncei_station_summary(latitude=latitude, longitude=longitude, days=days)
+        with integration_span(
+            "noaa-ncei",
+            "station_summary_endpoint",
+            latitude=latitude,
+            longitude=longitude,
+            days=days,
+        ) as span:
+            result = get_ncei_station_summary(latitude=latitude, longitude=longitude, days=days)
+            observations = result.get("observations", [])
+            span.add(records_returned=len(observations) if isinstance(observations, list) else None)
+            return result
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except httpx.HTTPError as exc:

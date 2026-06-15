@@ -78,7 +78,7 @@ def test_advice_returns_live_conditions_and_recommendation(monkeypatch) -> None:
             "city": "San Diego",
             "state": "CA",
             "species": "tuna",
-            "target_depth_ft": 250,
+            "target_depth_ft": 20,
         },
     )
 
