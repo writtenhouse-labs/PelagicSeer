@@ -15,6 +15,7 @@ fold in whatever signals are available and flag the rest as unavailable.
 """
 
 from datetime import date
+import os
 from typing import Any
 
 import httpx
@@ -67,6 +68,7 @@ COMMON_TO_SCIENTIFIC = {
 # Apparent fishing hours at or above which we treat the area as notably active.
 EFFORT_NOTABLE_HOURS = 50.0
 RECENT_EFFORT_NOTABLE_HOURS = 10.0
+INCLUDE_FAO_IN_ADVICE = os.getenv("PELAGICSEER_INCLUDE_FAO_IN_ADVICE", "false").lower() == "true"
 
 
 def resolve_scientific_name(species: str) -> tuple[str, bool]:
@@ -214,36 +216,57 @@ def collect_signals(
         # ValueError also covers a missing GFW_API_TOKEN.
         sources.append({"id": "global-fishing-watch", "status": "error", "detail": str(exc)})
 
-    fao_fishstat_context: dict[str, Any] = {"available": False}
-    try:
-        with integration_span(
-            "fao-fishstat",
-            "species_summary",
-            species=species,
-            scientific_name=scientific_name,
-            dataset="global_production",
-        ) as span:
-            fao_fishstat_context = get_fishstat_species_summary(
+    fao_fishstat_context: dict[str, Any] = {
+        "available": False,
+        "detail": "FAO FishStat is skipped in the advice hot path; use the mapper or FAO endpoint for global production context.",
+    }
+    if INCLUDE_FAO_IN_ADVICE:
+        try:
+            with integration_span(
+                "fao-fishstat",
+                "species_summary",
                 species=species,
                 scientific_name=scientific_name,
                 dataset="global_production",
+            ) as span:
+                fao_fishstat_context = get_fishstat_species_summary(
+                    species=species,
+                    scientific_name=scientific_name,
+                    dataset="global_production",
+                )
+                span.add(
+                    available=fao_fishstat_context.get("available"),
+                    records_returned=fao_fishstat_context.get("returned", 0),
+                    record_count=fao_fishstat_context.get("record_count", 0),
+                    map_points=len(fao_fishstat_context.get("map_points", [])),
+                    access=fao_fishstat_context.get("access"),
+                )
+            sources.append(
+                {
+                    "id": "fao-fishstat",
+                    "status": "ok",
+                    "record_count": fao_fishstat_context.get("record_count", 0),
+                }
             )
-            span.add(
-                available=fao_fishstat_context.get("available"),
-                records_returned=fao_fishstat_context.get("returned", 0),
-                record_count=fao_fishstat_context.get("record_count", 0),
-                map_points=len(fao_fishstat_context.get("map_points", [])),
-                access=fao_fishstat_context.get("access"),
-            )
+        except (httpx.HTTPError, ValueError) as exc:
+            sources.append({"id": "fao-fishstat", "status": "error", "detail": str(exc)})
+    else:
+        with integration_span(
+            "fao-fishstat",
+            "species_summary_skipped",
+            species=species,
+            scientific_name=scientific_name,
+            dataset="global_production",
+            reason="disabled_for_advice_latency",
+        ) as span:
+            span.add(available=False, records_returned=0, record_count=0)
         sources.append(
             {
                 "id": "fao-fishstat",
-                "status": "ok",
-                "record_count": fao_fishstat_context.get("record_count", 0),
+                "status": "skipped",
+                "detail": fao_fishstat_context["detail"],
             }
         )
-    except (httpx.HTTPError, ValueError) as exc:
-        sources.append({"id": "fao-fishstat", "status": "error", "detail": str(exc)})
 
     bathymetry_context: dict[str, Any] = {"available": False}
     try:

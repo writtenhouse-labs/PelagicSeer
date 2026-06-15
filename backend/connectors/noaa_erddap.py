@@ -18,7 +18,7 @@ ERDDAP_GRIDDAP_URL = ERDDAP_SST_URL
 # bait that feeds pelagic gamefish.
 ERDDAP_CHLA_URL = "https://coastwatch.pfeg.noaa.gov/erddap/griddap/erdMH1chla8day.json"
 
-HTTP_TIMEOUT_SECONDS = float(os.getenv("PELAGICSEER_HTTP_TIMEOUT_SECONDS", "300"))
+HTTP_TIMEOUT_SECONDS = float(os.getenv("PELAGICSEER_ERDDAP_TIMEOUT_SECONDS", "20"))
 
 
 def _celsius_to_fahrenheit(celsius: float) -> float:

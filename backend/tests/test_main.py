@@ -1142,10 +1142,10 @@ def test_advisor_scores_signals() -> None:
     # No environmental data, so the base score of 50 isolates the signal factors:
     # species present (+10), depth match (+5), recent effort (+8), in season (+5),
     # recent effort overlapping known habitat (+7), FAO global context (+3),
-    # bathymetry depth/structure (+10), and MRIP seasonality (+4), capped at 100.
+    # bathymetry depth/structure (+10), and MRIP seasonality (+4).
     result = build_fishing_advice(request, conditions={}, signals=signals)
 
-    assert result["score"] == 100
+    assert result["score"] == 96
     assert result["label"] == "excellent"
     assert set(result["signals_considered"]["used"]) == {
         "species_presence",
@@ -1225,9 +1225,13 @@ def test_collect_signals_combines_gfw_recent_effort_with_species_presence(
     assert signals["target_species_activity"]["available"] is True
     assert signals["target_species_activity"]["likely_recent_target_activity"] is True
     assert signals["target_species_activity"]["gfw_species_specific"] is False
-    assert signals["fao_fishstat_context"]["available"] is True
+    assert signals["fao_fishstat_context"]["available"] is False
     assert signals["bathymetry_context"]["available"] is True
     assert signals["mrip_recreational_prior"]["available"] is True
+    assert any(
+        source["id"] == "fao-fishstat" and source["status"] == "skipped"
+        for source in signals["sources"]
+    )
     assert {source["id"] for source in signals["sources"]} >= {
         "obis",
         "global-fishing-watch",
