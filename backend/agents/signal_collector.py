@@ -26,6 +26,7 @@ from connectors.dismap import get_dismap_distribution
 from connectors.gfw import get_fishing_effort
 from connectors.mrip import get_mrip_recreational_prior
 from connectors.obis import get_area_species, get_species_occurrences
+from services.integration_logging import integration_span
 
 # Curated common-name -> scientific-name map for popular targets. Falls back to
 # the raw input when unmatched (the user may already type a scientific name).
@@ -116,9 +117,19 @@ def collect_signals(
         occ_kwargs: dict[str, Any] = {}
         if startdate and enddate:
             occ_kwargs = {"startdate": startdate, "enddate": enddate}
-        occ = get_species_occurrences(
-            scientific_name, latitude, longitude, buffer_deg=2.0, **occ_kwargs
-        )
+        with integration_span(
+            "obis",
+            "species_occurrences",
+            scientific_name=scientific_name,
+            latitude=latitude,
+            longitude=longitude,
+            startdate=startdate,
+            enddate=enddate,
+        ) as span:
+            occ = get_species_occurrences(
+                scientific_name, latitude, longitude, buffer_deg=2.0, **occ_kwargs
+            )
+            span.add(total=occ.get("total", 0), records_returned=occ.get("returned", 0))
         species_presence = {
             "available": True,
             "scientific_name": scientific_name,
@@ -137,8 +148,27 @@ def collect_signals(
     try:
         # A short window answers "is this area being fished recently?" while a
         # full year gives a seasonality curve for the in-season check.
-        recent_effort = get_fishing_effort(latitude, longitude, days=recent_days, today=today)
-        yearly_effort = get_fishing_effort(latitude, longitude, days=365, today=today)
+        with integration_span(
+            "global-fishing-watch",
+            "recent_effort",
+            latitude=latitude,
+            longitude=longitude,
+            days=recent_days,
+        ) as span:
+            recent_effort = get_fishing_effort(latitude, longitude, days=recent_days, today=today)
+            span.add(total_hours=recent_effort.get("total_apparent_fishing_hours", 0.0))
+        with integration_span(
+            "global-fishing-watch",
+            "yearly_effort",
+            latitude=latitude,
+            longitude=longitude,
+            days=365,
+        ) as span:
+            yearly_effort = get_fishing_effort(latitude, longitude, days=365, today=today)
+            span.add(
+                total_hours=yearly_effort.get("total_apparent_fishing_hours", 0.0),
+                monthly_bins=len(yearly_effort.get("by_month", {})),
+            )
         by_month = yearly_effort.get("by_month", {})
         now = today or date.today()
         current_key = now.strftime("%Y-%m")
@@ -186,11 +216,25 @@ def collect_signals(
 
     fao_fishstat_context: dict[str, Any] = {"available": False}
     try:
-        fao_fishstat_context = get_fishstat_species_summary(
+        with integration_span(
+            "fao-fishstat",
+            "species_summary",
             species=species,
             scientific_name=scientific_name,
             dataset="global_production",
-        )
+        ) as span:
+            fao_fishstat_context = get_fishstat_species_summary(
+                species=species,
+                scientific_name=scientific_name,
+                dataset="global_production",
+            )
+            span.add(
+                available=fao_fishstat_context.get("available"),
+                records_returned=fao_fishstat_context.get("returned", 0),
+                record_count=fao_fishstat_context.get("record_count", 0),
+                map_points=len(fao_fishstat_context.get("map_points", [])),
+                access=fao_fishstat_context.get("access"),
+            )
         sources.append(
             {
                 "id": "fao-fishstat",
@@ -203,7 +247,18 @@ def collect_signals(
 
     bathymetry_context: dict[str, Any] = {"available": False}
     try:
-        bathymetry_context = get_bathymetry_context(latitude=latitude, longitude=longitude)
+        with integration_span(
+            "noaa-ncei-etopo",
+            "bathymetry_context",
+            latitude=latitude,
+            longitude=longitude,
+        ) as span:
+            bathymetry_context = get_bathymetry_context(latitude=latitude, longitude=longitude)
+            span.add(
+                available=bathymetry_context.get("available"),
+                depth_m=bathymetry_context.get("depth_m"),
+                structure=bathymetry_context.get("structure"),
+            )
         sources.append(
             {
                 "id": "noaa-ncei-etopo",
@@ -217,12 +272,24 @@ def collect_signals(
 
     mrip_recreational_prior: dict[str, Any] = {"available": False}
     try:
-        mrip_recreational_prior = get_mrip_recreational_prior(
+        with integration_span(
+            "noaa-mrip",
+            "recreational_prior",
             species=species,
             latitude=latitude,
             longitude=longitude,
             target_date=today,
-        )
+        ) as span:
+            mrip_recreational_prior = get_mrip_recreational_prior(
+                species=species,
+                latitude=latitude,
+                longitude=longitude,
+                target_date=today,
+            )
+            span.add(
+                available=mrip_recreational_prior.get("available"),
+                region=(mrip_recreational_prior.get("region") or {}).get("id"),
+            )
         sources.append(
             {
                 "id": "noaa-mrip",
@@ -263,14 +330,27 @@ def collect_area_species(
     startdate = plan.start_date.isoformat() if plan is not None else None
     enddate = plan.end_date.isoformat() if plan is not None else None
     try:
-        result = get_area_species(
-            latitude,
-            longitude,
-            buffer_deg=buffer_deg,
+        with integration_span(
+            "obis",
+            "area_species",
+            latitude=latitude,
+            longitude=longitude,
             startdate=startdate,
             enddate=enddate,
             limit=limit,
-        )
+        ) as span:
+            result = get_area_species(
+                latitude,
+                longitude,
+                buffer_deg=buffer_deg,
+                startdate=startdate,
+                enddate=enddate,
+                limit=limit,
+            )
+            span.add(
+                total_species=result.get("total_species", 0),
+                records_returned=len(result.get("species", [])),
+            )
         for entry in result["species"]:
             entry["common_name"] = resolve_common_name(entry["scientific_name"])
         return {"available": True, **result}
@@ -293,7 +373,19 @@ def collect_survey_distribution(
     """
     scientific_name, _ = resolve_scientific_name(species)
     try:
-        result = get_dismap_distribution(scientific_name, latitude, longitude)
+        with integration_span(
+            "noaa-dismap",
+            "survey_distribution",
+            scientific_name=scientific_name,
+            latitude=latitude,
+            longitude=longitude,
+        ) as span:
+            result = get_dismap_distribution(scientific_name, latitude, longitude)
+            span.add(
+                available=result.get("available"),
+                records_returned=len(result.get("samples", [])),
+                region=(result.get("region") or {}).get("id") if isinstance(result.get("region"), dict) else None,
+            )
         return {"available": True, **result}
     except (httpx.HTTPError, ValueError) as exc:
         return {"available": False, "detail": str(exc)}
