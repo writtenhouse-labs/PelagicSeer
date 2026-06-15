@@ -80,7 +80,7 @@ Set-Location '$FrontendDir'
 & '.\.venv\Scripts\Activate.ps1'
 `$env:PELAGICSEER_API_BASE_URL = '$ApiBaseUrl'
 `$env:PELAGICSEER_API_TIMEOUT_SECONDS = '$ApiTimeoutSeconds'
-streamlit run app.py --server.port $FrontendPort
+streamlit run app.py --server.address 127.0.0.1 --server.port $FrontendPort --server.headless true --server.fileWatcherType none --browser.gatherUsageStats false
 "@
 
 Write-Host "Starting PelagicSeer API at $ApiBaseUrl"

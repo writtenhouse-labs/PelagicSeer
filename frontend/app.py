@@ -5,12 +5,13 @@ from pathlib import Path
 import requests
 import streamlit as st
 
+from mapper import render_mapper
 from ui_status import install_swimming_fish_status
 
 
 DEFAULT_API_BASE_URL = "https://pelagicseer-api-542566523617.us-central1.run.app"
 API_BASE_URL = os.getenv("PELAGICSEER_API_BASE_URL", DEFAULT_API_BASE_URL).rstrip("/")
-API_TIMEOUT_SECONDS = int(os.getenv("PELAGICSEER_API_TIMEOUT_SECONDS", "90"))
+API_TIMEOUT_SECONDS = int(os.getenv("PELAGICSEER_API_TIMEOUT_SECONDS", "300"))
 ICON_PATH = Path(__file__).parent / "assets" / "BluefinTuna.png"
 
 _MODE_HELP = {
@@ -26,13 +27,23 @@ _, logo_column, _ = st.columns([1, 1, 1])
 with logo_column:
     st.image(str(ICON_PATH), width=160)
 st.title("PelagicSeer")
-st.page_link("pages/1_Multi_Source_Data_Mapper.py", label="Open Multi-Source Data Mapper")
+
+view = st.radio(
+    "View",
+    ["Fishing advice", "Multi-Source Data Mapper"],
+    horizontal=True,
+    label_visibility="collapsed",
+)
+
+if view == "Multi-Source Data Mapper":
+    render_mapper()
+    st.stop()
 
 with st.form("advice-form"):
     city = st.text_input("City", value="San Diego")
     state = st.text_input("State", value="CA")
     species = st.text_input("Species", value="tuna")
-    target_depth_ft = st.number_input("Target depth (ft)", min_value=0, value=250)
+    target_depth_ft = st.number_input("Target depth (ft)", min_value=0, value=20)
     date_columns = st.columns(2)
     with date_columns[0]:
         start_date = st.date_input("Start date", value=date.today())
@@ -104,7 +115,7 @@ if submitted:
             for entry in area_species["species"]:
                 label = entry.get("common_name") or entry.get("scientific_name")
                 detail = f" — {entry['scientific_name']}" if entry.get("common_name") else ""
-                st.write(f"- {label}{detail}  ·  {entry.get('records', 0)} records")
+                st.write(f"- {label}{detail} - {entry.get('records', 0)} records")
         else:
             st.caption("No area species list was available for this window.")
 

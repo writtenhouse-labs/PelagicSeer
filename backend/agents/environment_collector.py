@@ -222,6 +222,8 @@ def collect_conditions(
                         "status": "ok",
                         "station": station["station"],
                         "station_name": station.get("name"),
+                        "latitude": station.get("latitude"),
+                        "longitude": station.get("longitude"),
                         "distance_nm": station.get("distance_nm"),
                     }
                 )
@@ -259,6 +261,8 @@ def collect_conditions(
                         "status": "ok",
                         "station": station["station"],
                         "station_name": station.get("name"),
+                        "latitude": station.get("latitude"),
+                        "longitude": station.get("longitude"),
                         "distance_nm": station.get("distance_nm"),
                         "observed_time": observed_time,
                     }

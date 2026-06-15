@@ -44,6 +44,56 @@ from services.location_resolver import TOO_FAR_MESSAGE, resolve_location
 app = FastAPI(title="PelagicSeer API")
 
 
+def _analysis_location_from_conditions(location: dict, conditions: dict) -> dict:
+    """Choose the working NOAA station coordinate for ocean data lookups."""
+    preferred_source_ids = (
+        "noaa-ndbc",
+        "noaa-coops:water_level",
+        "noaa-coops:currents",
+        "noaa-coops:salinity",
+    )
+    sources = conditions.get("sources", [])
+    if isinstance(sources, list):
+        for source_id in preferred_source_ids:
+            for source in sources:
+                if not isinstance(source, dict):
+                    continue
+                if source.get("id") != source_id or source.get("status") != "ok":
+                    continue
+                latitude = source.get("latitude")
+                longitude = source.get("longitude")
+                if latitude is None or longitude is None:
+                    continue
+                return {
+                    "latitude": latitude,
+                    "longitude": longitude,
+                    "source": source_id,
+                    "station": source.get("station"),
+                    "station_name": source.get("station_name"),
+                    "distance_nm": source.get("distance_nm"),
+                    "basis": "nearest working NOAA station used by live conditions",
+                }
+
+    nearest_station = location.get("nearest_ocean_station") or {}
+    if nearest_station.get("latitude") is not None and nearest_station.get("longitude") is not None:
+        return {
+            "latitude": nearest_station["latitude"],
+            "longitude": nearest_station["longitude"],
+            "source": "nearest_ocean_station",
+            "station": nearest_station.get("station"),
+            "station_name": nearest_station.get("name"),
+            "distance_nm": nearest_station.get("distance_nm"),
+            "basis": "nearest active NOAA station fallback",
+        }
+
+    return {
+        "latitude": location["latitude"],
+        "longitude": location["longitude"],
+        "source": "geocoded_location",
+        "basis": "geocoded city/state fallback",
+    }
+
+
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
@@ -90,13 +140,19 @@ def advice(request: AdviceRequest) -> dict:
         }
 
     conditions = collect_conditions_with_fallback(latitude, longitude, plan=plan)
-    signals = collect_signals(request.species, latitude, longitude, plan=plan)
-    area_species = collect_area_species(latitude, longitude, plan=plan)
-    survey_distribution = collect_survey_distribution(request.species, latitude, longitude)
+    analysis_location = _analysis_location_from_conditions(location, conditions)
+    analysis_latitude = analysis_location["latitude"]
+    analysis_longitude = analysis_location["longitude"]
+
+    signals = collect_signals(request.species, analysis_latitude, analysis_longitude, plan=plan)
+    area_species = collect_area_species(analysis_latitude, analysis_longitude, plan=plan)
+    survey_distribution = collect_survey_distribution(
+        request.species, analysis_latitude, analysis_longitude
+    )
     # The climate anomaly is historical-window context and is token-gated +
     # multi-call, so it is only fetched for past windows (kept off the hot path).
     climate_anomaly = (
-        collect_climate_anomaly(latitude, longitude, plan=plan)
+        collect_climate_anomaly(analysis_latitude, analysis_longitude, plan=plan)
         if plan.mode == "historical"
         else {"available": False}
     )
@@ -104,6 +160,7 @@ def advice(request: AdviceRequest) -> dict:
 
     return {
         "location": location,
+        "analysis_location": analysis_location,
         "species": request.species,
         "date_range": plan.as_dict(),
         "conditions": conditions,
