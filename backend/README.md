@@ -61,7 +61,7 @@ Invoke-RestMethod `
   -Method Post `
   -Uri http://127.0.0.1:8000/advice `
   -ContentType "application/json" `
-  -Body '{"latitude":32.7157,"longitude":-117.1611,"species":"tuna","target_depth_ft":250}'
+  -Body '{"latitude":32.7157,"longitude":-117.1611,"species":"tuna","target_depth_ft":20}'
 ```
 
 ## Test

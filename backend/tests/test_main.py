@@ -92,6 +92,78 @@ def test_advice_returns_live_conditions_and_recommendation(monkeypatch) -> None:
     assert body["recommendation"]["reasons"]
 
 
+def test_advice_uses_working_noaa_station_coordinates_for_ocean_connectors(monkeypatch) -> None:
+    station_latitude = 32.867
+    station_longitude = -117.257
+    calls = {}
+    conditions = {
+        **_FULL_CONDITIONS,
+        "sources": [
+            {
+                "id": "noaa-ndbc",
+                "status": "ok",
+                "station": "SDBC1",
+                "station_name": "San Diego, CA",
+                "latitude": station_latitude,
+                "longitude": station_longitude,
+                "distance_nm": 4.1,
+            }
+        ],
+        "missing": [],
+    }
+
+    monkeypatch.setattr(
+        "api.main.resolve_location",
+        lambda city, state: {
+            "city": city,
+            "state": state,
+            "latitude": 32.7157,
+            "longitude": -117.1611,
+            "ocean_distance_miles": 4.2,
+            "too_far_from_ocean": False,
+            "nearest_ocean_station": {
+                "station": "DEAD1",
+                "latitude": 32.71,
+                "longitude": -117.16,
+            },
+        },
+    )
+    monkeypatch.setattr(
+        "api.main.collect_conditions_with_fallback",
+        lambda latitude, longitude, plan=None: dict(conditions),
+    )
+
+    def fake_collect_signals(species, latitude, longitude, plan=None):
+        calls["signals"] = (latitude, longitude)
+        return dict(_NO_SIGNALS)
+
+    def fake_collect_area_species(latitude, longitude, plan=None):
+        calls["area_species"] = (latitude, longitude)
+        return {"available": False}
+
+    def fake_collect_survey_distribution(species, latitude, longitude):
+        calls["survey_distribution"] = (latitude, longitude)
+        return {"available": False}
+
+    monkeypatch.setattr("api.main.collect_signals", fake_collect_signals)
+    monkeypatch.setattr("api.main.collect_area_species", fake_collect_area_species)
+    monkeypatch.setattr("api.main.collect_survey_distribution", fake_collect_survey_distribution)
+
+    response = client.post(
+        "/advice",
+        json={"city": "San Diego", "state": "CA", "species": "tuna"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["analysis_location"]["latitude"] == station_latitude
+    assert body["analysis_location"]["longitude"] == station_longitude
+    assert body["analysis_location"]["station"] == "SDBC1"
+    assert calls["signals"] == (station_latitude, station_longitude)
+    assert calls["area_species"] == (station_latitude, station_longitude)
+    assert calls["survey_distribution"] == (station_latitude, station_longitude)
+
+
 def test_advice_degrades_when_data_is_missing(monkeypatch) -> None:
     partial = {"source": "noaa-live", "sea_surface_temp_f": 72.4}
     monkeypatch.setattr(
@@ -368,7 +440,7 @@ def test_fao_fishstat_species_summary_uses_package_fallback_when_table_api_is_un
         "_fishstat_package_species_summary",
         lambda species, scientific_name, dataset, limit, detail: {
             "source": "fao-fishstat",
-            "access": "fishstat-r-universe",
+            "access": "fishstat-package",
             "dataset": dataset,
             "species_query": species,
             "scientific_name": scientific_name,
@@ -389,7 +461,7 @@ def test_fao_fishstat_species_summary_uses_package_fallback_when_table_api_is_un
     )
 
     assert summary["available"] is True
-    assert summary["access"] == "fishstat-r-universe"
+    assert summary["access"] == "fishstat-package"
     assert summary["record_count"] == 1
     assert "package fallback" in summary["detail"]
 
@@ -1026,7 +1098,7 @@ def test_advisor_scores_signals() -> None:
     from agents.orchestrator import build_fishing_advice
     from api.schemas import AdviceRequest
 
-    request = AdviceRequest(city="San Diego", state="CA", species="tuna", target_depth_ft=250)
+    request = AdviceRequest(city="San Diego", state="CA", species="tuna", target_depth_ft=20)
     signals = {
         "scientific_name": "Thunnus albacares",
         "name_resolved": True,

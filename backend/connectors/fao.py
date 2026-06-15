@@ -8,12 +8,16 @@ stable collection metadata surface and a small, configurable JSON query hook.
 import os
 import json
 import re
+import tarfile
+import tempfile
 from functools import lru_cache
 from html import unescape
 from json import JSONDecodeError
+from pathlib import Path
 from typing import Any
 
 import httpx
+import pyreadr
 
 
 FAO_FISHERY_BASE_URL = os.getenv("FAO_FISHERY_BASE_URL", "https://www.fao.org/fishery").rstrip("/")
@@ -23,6 +27,37 @@ FISHSTAT_RUNIVERSE_BASE_URL = os.getenv(
     "FISHSTAT_RUNIVERSE_BASE_URL",
     "https://sofia-taf.r-universe.dev/fishstat/data",
 ).rstrip("/")
+FISHSTAT_PACKAGE_URL = os.getenv(
+    "FISHSTAT_PACKAGE_URL",
+    "https://sofia-taf.r-universe.dev/src/contrib/fishstat_2026.1.0.0.tar.gz",
+)
+FISHSTAT_CACHE_DIR = Path(
+    os.getenv("FISHSTAT_CACHE_DIR", str(Path(tempfile.gettempdir()) / "pelagicseer-fishstat"))
+)
+
+FAO_AREA_CENTROIDS = {
+    18: (75.0, 0.0),
+    21: (45.0, -55.0),
+    27: (55.0, -15.0),
+    31: (15.0, -60.0),
+    34: (10.0, -25.0),
+    37: (38.0, 18.0),
+    41: (-35.0, -50.0),
+    47: (-30.0, 5.0),
+    48: (-60.0, -20.0),
+    51: (-10.0, 55.0),
+    57: (-15.0, 95.0),
+    58: (-60.0, 80.0),
+    61: (40.0, 150.0),
+    67: (45.0, -145.0),
+    71: (5.0, 145.0),
+    77: (5.0, -115.0),
+    81: (-30.0, 160.0),
+    87: (-25.0, -85.0),
+    88: (-60.0, -140.0),
+    98: (-68.0, 20.0),
+    99: (0.0, 0.0),
+}
 
 HTML_TAG_PATTERN = re.compile(r"<[^>]+>")
 CANONICAL_PATTERN = re.compile(
@@ -293,22 +328,49 @@ def _runiverse_data_url(dataset: str) -> str:
     return f"{FISHSTAT_RUNIVERSE_BASE_URL}/{dataset}/json"
 
 
+def _fishstat_package_path() -> Path:
+    FISHSTAT_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    package_path = FISHSTAT_CACHE_DIR / "fishstat_2026.1.0.0.tar.gz"
+    if package_path.exists() and package_path.stat().st_size > 0:
+        return package_path
+
+    with httpx.Client(timeout=HTTP_TIMEOUT_SECONDS, follow_redirects=True) as client:
+        response = client.get(FISHSTAT_PACKAGE_URL)
+        response.raise_for_status()
+        package_path.write_bytes(response.content)
+    return package_path
+
+
+@lru_cache(maxsize=8)
+def _fishstat_package_table(dataset: str):
+    package_path = _fishstat_package_path()
+    member_name = f"fishstat/data/{dataset}.RData"
+    with tarfile.open(package_path, mode="r:gz") as archive:
+        try:
+            member = archive.getmember(member_name)
+        except KeyError as exc:
+            raise ValueError(f"FishStat package does not include dataset '{dataset}'") from exc
+        extract_dir = FISHSTAT_CACHE_DIR / "extract"
+        extract_dir.mkdir(parents=True, exist_ok=True)
+        archive.extract(member, path=extract_dir)
+
+    table_path = extract_dir / member_name
+    result = pyreadr.read_r(str(table_path))
+    if dataset not in result:
+        raise ValueError(f"FishStat package dataset '{dataset}' could not be read")
+    return result[dataset]
+
+
 @lru_cache(maxsize=1)
 def _fishstat_species_lookup() -> list[dict[str, Any]]:
-    with httpx.Client(timeout=HTTP_TIMEOUT_SECONDS, follow_redirects=True) as client:
-        response = client.get(_runiverse_data_url("species"))
-        response.raise_for_status()
-        return response.json()
+    return _fishstat_package_table("species").to_dict("records")
 
 
 @lru_cache(maxsize=1)
 def _fishstat_country_lookup() -> dict[Any, str]:
     try:
-        with httpx.Client(timeout=HTTP_TIMEOUT_SECONDS, follow_redirects=True) as client:
-            response = client.get(_runiverse_data_url("country"))
-            response.raise_for_status()
-            countries = response.json()
-    except httpx.HTTPError:
+        countries = _fishstat_package_table("country").to_dict("records")
+    except (httpx.HTTPError, ValueError):
         return {}
     return {
         item.get("country"): item.get("country_name") or item.get("name")
@@ -320,11 +382,8 @@ def _fishstat_country_lookup() -> dict[Any, str]:
 @lru_cache(maxsize=1)
 def _fishstat_area_lookup() -> dict[Any, str]:
     try:
-        with httpx.Client(timeout=HTTP_TIMEOUT_SECONDS, follow_redirects=True) as client:
-            response = client.get(_runiverse_data_url("area"))
-            response.raise_for_status()
-            areas = response.json()
-    except httpx.HTTPError:
+        areas = _fishstat_package_table("area").to_dict("records")
+    except (httpx.HTTPError, ValueError):
         return {}
     return {
         item.get("area"): item.get("area_name") or item.get("name")
@@ -336,11 +395,8 @@ def _fishstat_area_lookup() -> dict[Any, str]:
 @lru_cache(maxsize=1)
 def _fishstat_measure_lookup() -> dict[Any, str]:
     try:
-        with httpx.Client(timeout=HTTP_TIMEOUT_SECONDS, follow_redirects=True) as client:
-            response = client.get(_runiverse_data_url("measure"))
-            response.raise_for_status()
-            measures = response.json()
-    except httpx.HTTPError:
+        measures = _fishstat_package_table("measure").to_dict("records")
+    except (httpx.HTTPError, ValueError):
         return {}
     return {
         item.get("measure"): item.get("unit") or item.get("measure_name") or item.get("short")
@@ -385,40 +441,44 @@ def _match_fishstat_species(species: str, scientific_name: str | None) -> list[d
 
 
 def _iter_runiverse_records(dataset: str):
-    decoder = json.JSONDecoder()
-    buffer = ""
-    started = False
-    url = _runiverse_data_url(dataset)
+    for record in _fishstat_package_table(dataset).to_dict("records"):
+        yield record
 
-    with httpx.Client(timeout=HTTP_TIMEOUT_SECONDS, follow_redirects=True) as client:
-        with client.stream("GET", url) as response:
-            response.raise_for_status()
-            for chunk in response.iter_text():
-                buffer += chunk
-                while True:
-                    buffer = buffer.lstrip()
-                    if not started:
-                        if not buffer:
-                            break
-                        if buffer[0] != "[":
-                            raise ValueError("FishStat package JSON did not return an array")
-                        buffer = buffer[1:]
-                        started = True
-                        continue
-                    if not buffer:
-                        break
-                    if buffer[0] == "]":
-                        return
-                    if buffer[0] == ",":
-                        buffer = buffer[1:]
-                        continue
-                    try:
-                        record, index = decoder.raw_decode(buffer)
-                    except JSONDecodeError:
-                        break
-                    if isinstance(record, dict):
-                        yield record
-                    buffer = buffer[index:]
+
+def _fao_area_map_points(area_totals: dict[Any, dict[str, Any]], measure_names: dict[Any, str]) -> list[dict[str, Any]]:
+    points = []
+    max_value = max(
+        (summary["total_value"] for summary in area_totals.values() if summary["total_value"] > 0),
+        default=0.0,
+    )
+    for area_code, summary in area_totals.items():
+        try:
+            normalized_area_code = int(float(area_code))
+        except (TypeError, ValueError):
+            continue
+        centroid = FAO_AREA_CENTROIDS.get(normalized_area_code)
+        if not centroid:
+            continue
+        latitude, longitude = centroid
+        total_value = summary["total_value"]
+        radius_m = 250000.0
+        if max_value > 0:
+            radius_m += 1250000.0 * ((total_value / max_value) ** 0.5)
+        points.append(
+            {
+                "source": "fao-fishstat",
+                "latitude": latitude,
+                "longitude": longitude,
+                "area": normalized_area_code,
+                "area_name": summary.get("area_name") or f"FAO area {normalized_area_code}",
+                "total_value": round(total_value, 3),
+                "records": summary["records"],
+                "latest_year": summary.get("latest_year"),
+                "measure": ", ".join(sorted(summary["measures"])) or None,
+                "radius_m": round(radius_m, 1),
+            }
+        )
+    return sorted(points, key=lambda item: item["total_value"], reverse=True)
 
 
 def _fishstat_package_species_summary(
@@ -441,7 +501,7 @@ def _fishstat_package_species_summary(
     if not species_codes:
         return {
             "source": "fao-fishstat",
-            "access": "fishstat-r-universe",
+            "access": "fishstat-package",
             "dataset": dataset,
             "species_query": species,
             "scientific_name": scientific_name,
@@ -461,6 +521,7 @@ def _fishstat_package_species_summary(
     area_names = _fishstat_area_lookup()
     measure_names = _fishstat_measure_lookup()
     matched_records: list[dict[str, Any]] = []
+    area_totals: dict[Any, dict[str, Any]] = {}
     total_value = 0.0
     valued_records = 0
     years: list[int] = []
@@ -480,6 +541,25 @@ def _fishstat_package_species_summary(
             years.append(int(year_value))
         if measure:
             measures.add(str(measure_names.get(measure) or measure))
+        area_code = record.get("area")
+        if area_code is not None and value is not None:
+            area_summary = area_totals.setdefault(
+                area_code,
+                {
+                    "total_value": 0.0,
+                    "records": 0,
+                    "measures": set(),
+                    "latest_year": None,
+                    "area_name": area_names.get(area_code) or area_code,
+                },
+            )
+            area_summary["total_value"] += value
+            area_summary["records"] += 1
+            if measure:
+                area_summary["measures"].add(str(measure_names.get(measure) or measure))
+            if year_value is not None:
+                latest_year = area_summary.get("latest_year")
+                area_summary["latest_year"] = max(int(year_value), latest_year or int(year_value))
 
         matched_records.append(
             {
@@ -503,7 +583,7 @@ def _fishstat_package_species_summary(
 
     return {
         "source": "fao-fishstat",
-        "access": "fishstat-r-universe",
+        "access": "fishstat-package",
         "dataset": dataset,
         "species_query": species,
         "scientific_name": scientific_name,
@@ -514,6 +594,7 @@ def _fishstat_package_species_summary(
         "total_reported_value": round(total_value, 3) if valued_records else None,
         "measures": sorted(measures),
         "records": matched_records[:limit],
+        "map_points": _fao_area_map_points(area_totals, measure_names),
         "matched_species": matches,
         "detail": detail,
         "notes": "FAO FishStat is global production/capture context, not local catch or live fishing conditions.",
