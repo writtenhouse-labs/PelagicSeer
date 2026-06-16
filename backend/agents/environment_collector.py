@@ -93,6 +93,17 @@ def _normalize_ndbc(observation: dict[str, Any]) -> dict[str, float]:
     return fields
 
 
+def _ndbc_observed_time(observation: dict[str, Any]) -> str | None:
+    year = observation.get("YY") or observation.get("#YY")
+    month = observation.get("MM")
+    day = observation.get("DD")
+    hour = observation.get("hh")
+    minute = observation.get("mm")
+    if not all((year, month, day, hour, minute)):
+        return None
+    return f"{year}-{month}-{day} {hour}:{minute} UTC"
+
+
 def _coops_value(
     station: str,
     product: str,
@@ -286,6 +297,7 @@ def collect_conditions(
                     span.add(
                         fields_returned=sum(value not in (None, "MM") for value in observation.values()),
                         observation_keys=len(observation),
+                        observed_time=_ndbc_observed_time(observation),
                     )
                 for field, value in _normalize_ndbc(observation).items():
                     record(field, value, "noaa-ndbc")
@@ -298,6 +310,7 @@ def collect_conditions(
                         "latitude": station.get("latitude"),
                         "longitude": station.get("longitude"),
                         "distance_nm": station.get("distance_nm"),
+                        "observed_time": _ndbc_observed_time(observation),
                     }
                 )
                 break
