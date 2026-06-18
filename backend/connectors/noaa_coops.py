@@ -22,7 +22,7 @@ COOPS_DATA_URL = "https://api.tidesandcurrents.noaa.gov/api/prod/datagetter"
 COOPS_MDAPI_STATIONS_URL = (
     "https://api.tidesandcurrents.noaa.gov/mdapi/prod/webapi/stations.json"
 )
-HTTP_TIMEOUT_SECONDS = float(os.getenv("PELAGICSEER_HTTP_TIMEOUT_SECONDS", "300"))
+HTTP_TIMEOUT_SECONDS = float(os.getenv("PELAGICSEER_HTTP_TIMEOUT_SECONDS", "15"))
 
 # datagetter products that carry a vertical datum; sending datum for the others
 # (currents, salinity, wind, ...) is unnecessary and can be rejected.

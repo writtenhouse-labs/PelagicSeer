@@ -18,7 +18,7 @@ import httpx
 
 GFW_REPORT_URL = "https://gateway.api.globalfishingwatch.org/v3/4wings/report"
 GFW_EFFORT_DATASET = "public-global-fishing-effort:latest"
-HTTP_TIMEOUT_SECONDS = float(os.getenv("PELAGICSEER_HTTP_TIMEOUT_SECONDS", "300"))
+HTTP_TIMEOUT_SECONDS = float(os.getenv("PELAGICSEER_HTTP_TIMEOUT_SECONDS", "15"))
 
 
 def _bbox_polygon(latitude: float, longitude: float, buffer_deg: float) -> dict[str, Any]:

@@ -17,7 +17,7 @@ import httpx
 
 
 INPORT_BASE_URL = "https://www.fisheries.noaa.gov/inport"
-HTTP_TIMEOUT_SECONDS = float(os.getenv("PELAGICSEER_HTTP_TIMEOUT_SECONDS", "300"))
+HTTP_TIMEOUT_SECONDS = float(os.getenv("PELAGICSEER_HTTP_TIMEOUT_SECONDS", "15"))
 URL_PATTERN = re.compile(r"https?://[^\s<>\"]+")
 INPORT_ITEM_LINK_PATTERN = re.compile(
     r"<a[^>]+href=[\"'](?P<href>(?:https://www\.fisheries\.noaa\.gov)?/inport/item/(?P<id>\d+)[^\"']*)[\"'][^>]*>"
