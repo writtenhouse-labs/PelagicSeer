@@ -25,7 +25,7 @@ from typing import Any
 import httpx
 
 NCEI_BASE_URL = "https://www.ncdc.noaa.gov/cdo-web/api/v2"
-HTTP_TIMEOUT_SECONDS = float(os.getenv("PELAGICSEER_HTTP_TIMEOUT_SECONDS", "300"))
+HTTP_TIMEOUT_SECONDS = float(os.getenv("PELAGICSEER_HTTP_TIMEOUT_SECONDS", "15"))
 
 
 def _token() -> str:

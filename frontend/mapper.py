@@ -10,8 +10,8 @@ import streamlit as st
 
 DEFAULT_API_BASE_URL = "https://pelagicseer-api-542566523617.us-central1.run.app"
 API_BASE_URL = os.getenv("PELAGICSEER_API_BASE_URL", DEFAULT_API_BASE_URL).rstrip("/")
-API_TIMEOUT_SECONDS = int(os.getenv("PELAGICSEER_API_TIMEOUT_SECONDS", "300"))
-FAO_TIMEOUT_SECONDS = int(os.getenv("PELAGICSEER_FAO_TIMEOUT_SECONDS", "120"))
+MAPPER_TIMEOUT_SECONDS = int(os.getenv("PELAGICSEER_MAPPER_TIMEOUT_SECONDS", "30"))
+FAO_TIMEOUT_SECONDS = int(os.getenv("PELAGICSEER_FAO_TIMEOUT_SECONDS", "60"))
 WORLD_VIEW_STATE = {"latitude": 12.0, "longitude": -20.0, "zoom": 0.75}
 
 
@@ -66,7 +66,7 @@ def _run_source_bank_search(search_rank, species, sample_size, startdate, enddat
                     "startdate": startdate.isoformat(),
                     "enddate": enddate.isoformat(),
                 },
-                timeout=API_TIMEOUT_SECONDS,
+                timeout=MAPPER_TIMEOUT_SECONDS,
             )
         response.raise_for_status()
         map_body = response.json()

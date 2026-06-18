@@ -24,7 +24,12 @@ from services.integration_logging import integration_span
 
 FAO_FISHERY_BASE_URL = os.getenv("FAO_FISHERY_BASE_URL", "https://www.fao.org/fishery").rstrip("/")
 FAO_FISHSTAT_API_BASE_URL = os.getenv("FAO_FISHSTAT_API_BASE_URL", FAO_FISHERY_BASE_URL).rstrip("/")
-HTTP_TIMEOUT_SECONDS = float(os.getenv("PELAGICSEER_HTTP_TIMEOUT_SECONDS", "300"))
+HTTP_TIMEOUT_SECONDS = float(
+    os.getenv(
+        "PELAGICSEER_FAO_HTTP_TIMEOUT_SECONDS",
+        os.getenv("PELAGICSEER_HTTP_TIMEOUT_SECONDS", "60"),
+    )
+)
 FISHSTAT_RUNIVERSE_BASE_URL = os.getenv(
     "FISHSTAT_RUNIVERSE_BASE_URL",
     "https://sofia-taf.r-universe.dev/fishstat/data",

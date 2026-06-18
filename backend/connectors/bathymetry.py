@@ -14,7 +14,7 @@ ETOPO_IMAGE_SERVER_URL = os.getenv(
     "ETOPO_IMAGE_SERVER_URL",
     "https://gis.ngdc.noaa.gov/arcgis/rest/services/DEM_mosaics/DEM_global_mosaic/ImageServer",
 ).rstrip("/")
-HTTP_TIMEOUT_SECONDS = float(os.getenv("PELAGICSEER_HTTP_TIMEOUT_SECONDS", "300"))
+HTTP_TIMEOUT_SECONDS = float(os.getenv("PELAGICSEER_HTTP_TIMEOUT_SECONDS", "15"))
 _M_TO_FT = 3.28084
 
 

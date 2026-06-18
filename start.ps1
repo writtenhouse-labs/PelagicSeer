@@ -2,7 +2,11 @@ param(
   [switch]$Install,
   [int]$ApiPort = 8000,
   [int]$FrontendPort = 8501,
-  [int]$ApiTimeoutSeconds = 300
+  [int]$AdviceTimeoutSeconds = 110,
+  [int]$MapperTimeoutSeconds = 30,
+  [int]$FaoTimeoutSeconds = 60,
+  [int]$HttpTimeoutSeconds = 15,
+  [int]$ErddapTimeoutSeconds = 20
 )
 
 $ErrorActionPreference = "Stop"
@@ -71,6 +75,9 @@ $BackendCommand = @"
 Set-Location '$BackendDir'
 `$host.UI.RawUI.WindowTitle = 'PelagicSeer API'
 & '.\.venv\Scripts\Activate.ps1'
+`$env:PELAGICSEER_HTTP_TIMEOUT_SECONDS = '$HttpTimeoutSeconds'
+`$env:PELAGICSEER_FAO_HTTP_TIMEOUT_SECONDS = '$FaoTimeoutSeconds'
+`$env:PELAGICSEER_ERDDAP_TIMEOUT_SECONDS = '$ErddapTimeoutSeconds'
 python -m uvicorn api.main:app --reload --host 127.0.0.1 --port $ApiPort
 "@
 
@@ -79,7 +86,9 @@ Set-Location '$FrontendDir'
 `$host.UI.RawUI.WindowTitle = 'PelagicSeer Frontend'
 & '.\.venv\Scripts\Activate.ps1'
 `$env:PELAGICSEER_API_BASE_URL = '$ApiBaseUrl'
-`$env:PELAGICSEER_API_TIMEOUT_SECONDS = '$ApiTimeoutSeconds'
+`$env:PELAGICSEER_ADVICE_TIMEOUT_SECONDS = '$AdviceTimeoutSeconds'
+`$env:PELAGICSEER_MAPPER_TIMEOUT_SECONDS = '$MapperTimeoutSeconds'
+`$env:PELAGICSEER_FAO_TIMEOUT_SECONDS = '$FaoTimeoutSeconds'
 streamlit run app.py --server.address 127.0.0.1 --server.port $FrontendPort --server.headless true --server.fileWatcherType none --browser.gatherUsageStats false
 "@
 

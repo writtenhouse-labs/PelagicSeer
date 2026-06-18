@@ -16,7 +16,7 @@ from typing import Any
 
 import httpx
 
-HTTP_TIMEOUT_SECONDS = float(os.getenv("PELAGICSEER_HTTP_TIMEOUT_SECONDS", "300"))
+HTTP_TIMEOUT_SECONDS = float(os.getenv("PELAGICSEER_HTTP_TIMEOUT_SECONDS", "15"))
 
 # WGS84; the spatial reference our lat/lon envelopes are expressed in.
 WGS84_WKID = 4326

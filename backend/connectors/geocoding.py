@@ -6,7 +6,7 @@ import httpx
 
 NOMINATIM_SEARCH_URL = "https://nominatim.openstreetmap.org/search"
 USER_AGENT = "PelagicSeer local development"
-HTTP_TIMEOUT_SECONDS = float(os.getenv("PELAGICSEER_HTTP_TIMEOUT_SECONDS", "300"))
+HTTP_TIMEOUT_SECONDS = float(os.getenv("PELAGICSEER_HTTP_TIMEOUT_SECONDS", "15"))
 
 
 def geocode_city_state(city: str, state: str) -> dict[str, Any]:

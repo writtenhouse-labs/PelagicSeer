@@ -15,7 +15,7 @@ import httpx
 
 OBIS_OCCURRENCE_URL = "https://api.obis.org/v3/occurrence"
 OBIS_CHECKLIST_URL = "https://api.obis.org/v3/checklist"
-HTTP_TIMEOUT_SECONDS = float(os.getenv("PELAGICSEER_HTTP_TIMEOUT_SECONDS", "300"))
+HTTP_TIMEOUT_SECONDS = float(os.getenv("PELAGICSEER_HTTP_TIMEOUT_SECONDS", "15"))
 
 OCEAN_BOUNDS = {
     "Atlantic Ocean": [(-70.0, -80.0, 80.0, 20.0)],

@@ -20,7 +20,7 @@ from typing import Any
 import httpx
 
 NWS_BASE_URL = "https://api.weather.gov"
-HTTP_TIMEOUT_SECONDS = float(os.getenv("PELAGICSEER_HTTP_TIMEOUT_SECONDS", "300"))
+HTTP_TIMEOUT_SECONDS = float(os.getenv("PELAGICSEER_HTTP_TIMEOUT_SECONDS", "15"))
 # NWS blocks requests without a descriptive User-Agent; make it overridable.
 _USER_AGENT = os.getenv(
     "PELAGICSEER_NWS_USER_AGENT",

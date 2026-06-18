@@ -12,7 +12,12 @@ from ui_status import install_swimming_fish_status
 
 DEFAULT_API_BASE_URL = "https://pelagicseer-api-542566523617.us-central1.run.app"
 API_BASE_URL = os.getenv("PELAGICSEER_API_BASE_URL", DEFAULT_API_BASE_URL).rstrip("/")
-API_TIMEOUT_SECONDS = int(os.getenv("PELAGICSEER_API_TIMEOUT_SECONDS", "300"))
+ADVICE_TIMEOUT_SECONDS = int(
+    os.getenv(
+        "PELAGICSEER_ADVICE_TIMEOUT_SECONDS",
+        os.getenv("PELAGICSEER_API_TIMEOUT_SECONDS", "110"),
+    )
+)
 ICON_PATH = Path(__file__).parent / "assets" / "BluefinTuna.png"
 
 _MODE_HELP = {
@@ -428,7 +433,7 @@ if submitted:
         response = requests.post(
             f"{API_BASE_URL}/advice",
             json=payload,
-            timeout=API_TIMEOUT_SECONDS,
+            timeout=ADVICE_TIMEOUT_SECONDS,
         )
         response.raise_for_status()
     except requests.RequestException as exc:
