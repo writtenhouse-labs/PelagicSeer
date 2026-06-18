@@ -18,7 +18,7 @@ ADVICE_TIMEOUT_SECONDS = int(
         os.getenv("PELAGICSEER_API_TIMEOUT_SECONDS", "110"),
     )
 )
-ICON_PATH = Path(__file__).parent / "assets" / "BluefinTuna.png"
+ICON_PATH = Path(__file__).parent / "assets" / "BlueFinTuna.png"
 
 _MODE_HELP = {
     "live": "Window includes today - using the freshest live observations.",
