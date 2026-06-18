@@ -1,13 +1,138 @@
-name: Deploy
+name: Test and deploy
 
 on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
   workflow_dispatch:
 
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: pelagicseer-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID || 'pelagicseer-dev' }}
+  GCP_REGION: ${{ vars.GCP_REGION || 'us-central1' }}
+  API_SERVICE: pelagicseer-api
+  FRONTEND_SERVICE: pelagicseer-frontend
+
 jobs:
-  placeholder:
+  test:
+    name: Test application
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout
+      - name: Check out repository
         uses: actions/checkout@v4
-      - name: Deployment not configured yet
-        run: echo "Cloud Run deployment will be configured after GCP project details are finalized."
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: pip
+          cache-dependency-path: |
+            backend/requirements.txt
+            frontend/requirements.txt
+
+      - name: Install backend dependencies
+        run: python -m pip install -r backend/requirements.txt
+
+      - name: Run backend tests
+        working-directory: backend
+        run: python -m pytest tests/test_main.py -q
+
+      - name: Compile Python sources
+        run: |
+          python -m py_compile \
+            frontend/app.py \
+            frontend/mapper.py \
+            frontend/ui_status.py
+          python -m compileall -q backend
+
+  deploy:
+    name: Deploy development services
+    needs: test
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    environment: development
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Set up Google Cloud CLI
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Deploy API
+        run: |
+          gcloud run deploy "$API_SERVICE" \
+            --project "$GCP_PROJECT_ID" \
+            --region "$GCP_REGION" \
+            --source backend \
+            --timeout 120 \
+            --update-env-vars "PYTHONPATH=/workspace,PELAGICSEER_HTTP_TIMEOUT_SECONDS=15,PELAGICSEER_FAO_HTTP_TIMEOUT_SECONDS=60,PELAGICSEER_ERDDAP_TIMEOUT_SECONDS=20,PELAGICSEER_INCLUDE_FAO_IN_ADVICE=false" \
+            --labels "git-commit=${GITHUB_SHA}" \
+            --quiet
+
+      - name: Resolve API URL
+        id: api
+        run: |
+          api_url="$(gcloud run services describe "$API_SERVICE" \
+            --project "$GCP_PROJECT_ID" \
+            --region "$GCP_REGION" \
+            --format='value(status.url)')"
+          echo "url=$api_url" >> "$GITHUB_OUTPUT"
+
+      - name: Check API health
+        run: curl --fail --show-error --silent --retry 8 --retry-delay 5 "${{ steps.api.outputs.url }}/health"
+
+      - name: Deploy frontend
+        run: |
+          gcloud run deploy "$FRONTEND_SERVICE" \
+            --project "$GCP_PROJECT_ID" \
+            --region "$GCP_REGION" \
+            --source frontend \
+            --timeout 3600 \
+            --session-affinity \
+            --min 1 \
+            --max 3 \
+            --concurrency 10 \
+            --update-env-vars "PELAGICSEER_API_BASE_URL=${{ steps.api.outputs.url }},PELAGICSEER_ADVICE_TIMEOUT_SECONDS=110,PELAGICSEER_MAPPER_TIMEOUT_SECONDS=30,PELAGICSEER_FAO_TIMEOUT_SECONDS=60" \
+            --remove-env-vars "PELAGICSEER_API_TIMEOUT_SECONDS" \
+            --labels "git-commit=${GITHUB_SHA}" \
+            --quiet
+
+      - name: Resolve frontend URL
+        id: frontend
+        run: |
+          frontend_url="$(gcloud run services describe "$FRONTEND_SERVICE" \
+            --project "$GCP_PROJECT_ID" \
+            --region "$GCP_REGION" \
+            --format='value(status.url)')"
+          echo "url=$frontend_url" >> "$GITHUB_OUTPUT"
+
+      - name: Check frontend health
+        run: curl --fail --show-error --silent --retry 8 --retry-delay 5 "${{ steps.frontend.outputs.url }}/_stcore/health"
+
+      - name: Publish deployment summary
+        run: |
+          {
+            echo "## Development deployment"
+            echo
+            echo "- Commit: \`${GITHUB_SHA}\`"
+            echo "- API: ${{ steps.api.outputs.url }}"
+            echo "- Frontend: ${{ steps.frontend.outputs.url }}"
+          } >> "$GITHUB_STEP_SUMMARY"
