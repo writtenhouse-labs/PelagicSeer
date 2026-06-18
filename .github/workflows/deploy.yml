@@ -56,6 +56,9 @@ jobs:
             frontend/ui_status.py
           python -m compileall -q backend
 
+      - name: Verify frontend assets
+        run: test -f frontend/assets/BlueFinTuna.png
+
   deploy:
     name: Deploy development services
     needs: test
