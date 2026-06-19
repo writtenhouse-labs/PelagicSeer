@@ -6,3 +6,4 @@ enableCORS = false
 enableXsrfProtection = false
 fileWatcherType = "none"
 headless = true
+websocketPingInterval = 30

@@ -89,7 +89,7 @@ Set-Location '$FrontendDir'
 `$env:PELAGICSEER_ADVICE_TIMEOUT_SECONDS = '$AdviceTimeoutSeconds'
 `$env:PELAGICSEER_MAPPER_TIMEOUT_SECONDS = '$MapperTimeoutSeconds'
 `$env:PELAGICSEER_FAO_TIMEOUT_SECONDS = '$FaoTimeoutSeconds'
-streamlit run app.py --server.address 127.0.0.1 --server.port $FrontendPort --server.headless true --server.fileWatcherType none --browser.gatherUsageStats false
+streamlit run app.py --server.address 127.0.0.1 --server.port $FrontendPort --server.headless true --server.fileWatcherType none --server.websocketPingInterval 30 --browser.gatherUsageStats false
 "@
 
 Write-Host "Starting PelagicSeer API at $ApiBaseUrl"
