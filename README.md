@@ -106,6 +106,12 @@ cd C:\Users\sarah\Source\Repos\PelagicSeer
 
 Use `.\start.ps1 -Install` to create missing virtual environments and refresh dependencies before starting.
 
+Stop both local services with:
+
+```powershell
+.\stop.ps1
+```
+
 ## Timeout Budgets
 
 The local launcher applies interactive latency budgets suited to each interface:
